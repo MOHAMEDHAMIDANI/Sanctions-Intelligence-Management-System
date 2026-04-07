@@ -623,17 +623,16 @@ export class SanctionedEntityService {
       this.pickValue(normalized, ['addr1', 'address1', 'address', 'location']) || '';
     const address2 = this.pickValue(normalized, ['addr2', 'address2']) || '';
     const address3 = this.pickValue(normalized, ['addr3', 'address3']) || '';
+    const name1 = this.pickValue(normalized, ['name1']);
+    const name2 = this.pickValue(normalized, ['name2']);
+    const name3 = this.pickValue(normalized, ['name3']);
+    const name4 = this.pickValue(normalized, ['name4']);
+    const name5 = this.pickValue(normalized, ['name5']);
+    const name6 = this.pickValue(normalized, ['name6']);
 
     const fullName =
       this.pickValue(normalized, ['fullname', 'name', 'primaryname']) ||
-      [
-        this.pickValue(normalized, ['name1']),
-        this.pickValue(normalized, ['name2']),
-        this.pickValue(normalized, ['name3']),
-        this.pickValue(normalized, ['name4']),
-        this.pickValue(normalized, ['name5']),
-        this.pickValue(normalized, ['name6']),
-      ]
+      [name1, name2, name3, name4, name5, name6]
         .filter(Boolean)
         .join(' ')
         .trim();
@@ -668,15 +667,19 @@ export class SanctionedEntityService {
         this.pickValue(normalized, ['passportnumber', 'passportnum']) || null,
       nationalId:
         this.pickValue(normalized, ['nationalid', 'nationalidnumber']) || null,
-      name1: this.pickValue(normalized, ['name1']) || null,
-      name2: this.pickValue(normalized, ['name2']) || null,
-      name3: this.pickValue(normalized, ['name3']) || null,
-      name4: this.pickValue(normalized, ['name4']) || null,
-      name5: this.pickValue(normalized, ['name5']) || null,
-      name6: this.pickValue(normalized, ['name6']) || null,
+      name1: name1 || fullName || null,
+      name2: name2 || null,
+      name3: name3 || null,
+      name4: name4 || null,
+      name5: name5 || null,
+      name6: name6 || null,
       title: this.pickValue(normalized, ['title']) || null,
       nameNonLatin:
         this.pickValue(normalized, ['namenonlatinscript', 'namenonlatin']) || null,
+      nonLatinType:
+        this.pickValue(normalized, ['nonlatintype', 'namenonlatintype']) || null,
+      nonLatinLang:
+        this.pickValue(normalized, ['nonlatinlang', 'namenonlatinlang']) || null,
       country: this.pickValue(normalized, ['country']) || null,
       groupType: this.pickValue(normalized, ['grouptype', 'type']) || null,
       aliasType: this.pickValue(normalized, ['aliastype']) || null,
@@ -832,10 +835,11 @@ export class SanctionedEntityService {
           .filter((n: string) => n && String(n).trim())
           .join(' ')
       || 'Unknown';
+    const primaryDisplayName = data.name1 || fullName;
 
     // Build a sanitized rawData snapshot preserving every original field
     const rawData: Record<string, any> = {
-      name1: data.name1 || '', name2: data.name2 || '', name3: data.name3 || '',
+      name1: primaryDisplayName || '', name2: data.name2 || '', name3: data.name3 || '',
       name4: data.name4 || '', name5: data.name5 || '', name6: data.name6 || '',
       title: data.title || '',
       nameNonLatin: data.nameNonLatin || '', nonLatinType: data.nonLatinType || '', nonLatinLang: data.nonLatinLang || '',
@@ -998,7 +1002,7 @@ export class SanctionedEntityService {
 
     return {
       id: p.id,
-      name1: raw.name1 || '',
+      name1: raw.name1 || raw.fullName || p.fullName || '',
       name2: raw.name2 || '',
       name3: raw.name3 || '',
       name4: raw.name4 || '',
