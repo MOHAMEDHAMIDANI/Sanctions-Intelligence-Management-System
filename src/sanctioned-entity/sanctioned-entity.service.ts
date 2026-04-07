@@ -629,6 +629,28 @@ export class SanctionedEntityService {
     const name4 = this.pickValue(normalized, ['name4']);
     const name5 = this.pickValue(normalized, ['name5']);
     const name6 = this.pickValue(normalized, ['name6']);
+    const emitter = this.pickValue(normalized, ['emetteur', 'emitter', 'issuer']);
+    const requisitionId = this.pickValue(normalized, [
+      'idrequisition',
+      'requisitionid',
+      'requestid',
+    ]);
+    const requisitionDate = this.parseExcelDate(
+      this.pickValue(normalized, ['daterequisition', 'requisitiondate']),
+    );
+    const notes = this.pickValue(normalized, [
+      'otherinformation',
+      'otherinfo',
+      'notes',
+    ]);
+    const otherInfo = [
+      notes,
+      emitter ? `Emitter: ${emitter}` : null,
+      requisitionId ? `Requisition ID: ${requisitionId}` : null,
+      requisitionDate ? `Requisition Date: ${requisitionDate}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
 
     const fullName =
       this.pickValue(normalized, ['fullname', 'name', 'primaryname']) ||
@@ -642,27 +664,32 @@ export class SanctionedEntityService {
       alias:
         this.pickValue(normalized, ['alias', 'aka', 'aliasname']) || null,
       dob: this.parseExcelDate(
-        this.pickValue(normalized, ['dob', 'dateofbirth']),
+        this.pickValue(normalized, ['dob', 'dateofbirth', 'datenaissance']),
       ),
       nationality:
         this.pickValue(normalized, ['nationality']) ||
         this.pickValue(normalized, ['country']) ||
         null,
       placeOfBirth:
-        this.pickValue(normalized, ['placeofbirth', 'townofbirth']) || null,
+        this.pickValue(normalized, ['placeofbirth', 'townofbirth', 'lieunaissance']) ||
+        null,
       townOfBirth:
-        this.pickValue(normalized, ['townofbirth', 'placeofbirth']) || null,
+        this.pickValue(normalized, ['townofbirth', 'placeofbirth', 'lieunaissance']) ||
+        null,
       countryOfBirth:
         this.pickValue(normalized, ['countryofbirth']) || null,
       addresses: [address1, address2, address3].filter(Boolean),
       groupId:
         this.pickValue(normalized, ['groupid', 'group']) || null,
       listedOn: this.parseExcelDate(
-        this.pickValue(normalized, ['listedon', 'uksanctionslistdate']),
+        this.pickValue(normalized, [
+          'listedon',
+          'uksanctionslistdate',
+          'daterequisition',
+          'requisitiondate',
+        ]),
       ),
-      otherInfo:
-        this.pickValue(normalized, ['otherinformation', 'otherinfo', 'notes']) ||
-        null,
+      otherInfo: otherInfo || null,
       passportNum:
         this.pickValue(normalized, ['passportnumber', 'passportnum']) || null,
       nationalId:
@@ -681,8 +708,10 @@ export class SanctionedEntityService {
       nonLatinLang:
         this.pickValue(normalized, ['nonlatinlang', 'namenonlatinlang']) || null,
       country: this.pickValue(normalized, ['country']) || null,
-      groupType: this.pickValue(normalized, ['grouptype', 'type']) || null,
+      groupType:
+        this.pickValue(normalized, ['grouptype', 'type', 'typeclient']) || null,
       aliasType: this.pickValue(normalized, ['aliastype']) || null,
+      regime: this.pickValue(normalized, ['regime', 'operation']) || null,
       addr1: address1 || null,
       addr2: address2 || null,
       addr3: address3 || null,
@@ -972,6 +1001,8 @@ export class SanctionedEntityService {
     if (!groupType) return EntityTypeEnum.INDIVIDUAL;
     const upper = String(groupType).toUpperCase();
     if (upper.includes('ORG') || upper.includes('ENTITY')) return EntityTypeEnum.ORGANIZATION;
+    if (upper.includes('MORAL')) return EntityTypeEnum.ORGANIZATION;
+    if (upper.includes('PHYSIQUE')) return EntityTypeEnum.INDIVIDUAL;
     if (upper.includes('VESSEL') || upper.includes('SHIP')) return EntityTypeEnum.VESSEL;
     return EntityTypeEnum.INDIVIDUAL;
   }
@@ -985,7 +1016,11 @@ export class SanctionedEntityService {
       const date = new Date(excelEpoch.getTime() + value * 86400000);
       return date.toISOString().split('T')[0];
     }
-    return String(value);
+    const normalized = String(value).trim();
+    if (/^\d{8}$/.test(normalized)) {
+      return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`;
+    }
+    return normalized;
   }
 
   /** Flatten an EntityProfile + relations into the flat column format the frontend ViewEntriesModal expects */
