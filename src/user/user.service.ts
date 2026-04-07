@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserRepository } from './user.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -31,8 +36,14 @@ export class UserService {
 
     const savedUser = await this.userRepository.save(user);
 
-    // Send invitation email
-    await this.mailService.sendInviteEmail(savedUser.email, inviteToken);
+    try {
+      await this.mailService.sendInviteEmail(savedUser.email, inviteToken);
+    } catch {
+      await this.userRepository.delete(savedUser.id);
+      throw new InternalServerErrorException(
+        'User could not be created because the invitation email failed to send',
+      );
+    }
 
     return savedUser;
   }

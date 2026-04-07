@@ -21,6 +21,8 @@ import { NameTypeEnum } from '../common/enums/name-type.enum';
 import { AddressTypeEnum } from '../common/enums/address-type.enum';
 import { DataSource, EntityManager, Not, IsNull } from 'typeorm';
 
+type UploadFormat = 'excel' | 'xml' | 'hmt' | 'pdf';
+
 type UploadedFile = {
   originalname: string;
   buffer: Buffer;
@@ -295,65 +297,72 @@ export class SanctionedEntityService {
     }
   }
 
-  async processExcelUpload(file: UploadedFile, metadata: any) {
+  async processUploadedFile(file: UploadedFile, metadata: any) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
 
-    const xlsx = this.loadXlsx();
-    const workbook = xlsx.read(file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const datasheet = workbook.Sheets[sheetName];
-    const rows: any[] = xlsx.utils.sheet_to_json(datasheet);
+    const format = this.detectUploadFormat(file);
+    let rows: any[] = [];
+
+    switch (format) {
+      case 'excel':
+        rows = this.parseExcelRows(file);
+        break;
+      case 'xml':
+        rows = this.parseXmlRows(file);
+        break;
+      case 'hmt':
+        rows = this.parseHmtRows(file);
+        break;
+      case 'pdf':
+        rows = this.parsePdfRows(file);
+        break;
+      default:
+        throw new BadRequestException('Unsupported upload format');
+    }
+
+    const normalizedRows = rows
+      .map((row) => this.normalizeImportedRow(row))
+      .filter((row) => this.rowHasContent(row));
+
+    if (!normalizedRows.length) {
+      throw new BadRequestException(
+        `No structured entries could be extracted from ${file.originalname}`,
+      );
+    }
+
+    return this.createBatchFromRows(normalizedRows, metadata, file.originalname);
+  }
+
+  async processExcelUpload(file: UploadedFile, metadata: any) {
+    return this.processUploadedFile(file, metadata);
+  }
+
+  private async createBatchFromRows(rows: any[], metadata: any, originalName?: string) {
+    const normalizedStatus = this.normalizeStatus(
+      metadata.status || BlacklistStatusEnum.READY,
+    );
 
     const saved = await this.dataSource.transaction(async (manager) => {
-      // 1. Create ONE batch (SanctionedEntity)
       const batch = manager.create(SanctionedEntity, {
-        source: String(metadata.source || 'Excel Upload'),
+        source: String(metadata.source || originalName || 'Uploaded File'),
         blacklistId: String(metadata.blacklistId || 'N/A'),
-        status: (metadata.status || BlacklistStatusEnum.READY) as BlacklistStatusEnum,
+        status: normalizedStatus,
         date: new Date().toISOString().split('T')[0],
         entriesCount: rows.length,
         createdById: metadata.createdById || null,
       });
       const savedBatch = await manager.save(batch);
 
-      // 2. Create N entries (EntityProfiles) inside that batch
       try {
         for (const row of rows) {
-          const extractedFullName = row.Name || row.FullName || row.fullName || row['Full Name'];
-          
-          await this.createEntryProfile(manager, savedBatch.id, {
-            fullName: extractedFullName ? String(extractedFullName) : undefined,
-            alias: row.Alias || row.alias || row.AKA || null,
-            dob: this.parseExcelDate(row.DOB || row.dob || row['Date of Birth']),
-            nationality: row.Nationality || row.nationality || row.Country || null,
-            placeOfBirth: row.PlaceOfBirth || row['Place of Birth'] || row['Town of Birth'] || null,
-            townOfBirth: row['Town of Birth'] || row.PlaceOfBirth || row['Place of Birth'] || null,
-            countryOfBirth: row['Country of Birth'] || row.countryOfBirth || null,
-            addresses: [row.Address || row.address || row.Location || null],
-            groupId: row.GroupID || row.groupId || row.group_id || row['Group ID'] || null,
-            listedOn: this.parseExcelDate(row.ListedOn || row['Listed On']),
-            otherInfo: row.OtherInfo || row['Other Information'] || null,
-            passportNum: row.PassportNum || row['Passport Number'] || null,
-            nationalId: row.NationalId || row['National ID'] || null,
-            // HMT name fields
-            name1: row['Name 1'] || row.name1 || null,
-            name2: row['Name 2'] || row.name2 || null,
-            name3: row['Name 3'] || row.name3 || null,
-            name4: row['Name 4'] || row.name4 || null,
-            name5: row['Name 5'] || row.name5 || null,
-            name6: row['Name 6'] || row.name6 || null,
-            title: row.Title || row.title || null,
-            nameNonLatin: row['Name Non-Latin Script'] || row['Name Non-Latin'] || row.nameNonLatin || null,
-            country: row.Country || row.country || null,
-            groupType: row['Group Type'] || row.groupType || null,
-            aliasType: row['Alias Type'] || row.aliasType || null,
-          });
+          await this.createEntryProfile(manager, savedBatch.id, row);
         }
       } catch (error) {
-        this.logger.error(`Error processing Excel upload: ${error.message}`, error.stack);
-        throw new BadRequestException(`Excel upload failed: ${error.message}`);
+        const err = error as Error;
+        this.logger.error(`Error processing uploaded file: ${err.message}`, err.stack);
+        throw new BadRequestException(`Upload failed: ${err.message}`);
       }
 
       return savedBatch;
@@ -363,10 +372,389 @@ export class SanctionedEntityService {
       action: AuditActionEnum.SANCTIONED_ENTITY_CREATED,
       entityType: 'SanctionedEntity',
       entityId: saved.id,
-      metadata: { count: rows.length, source: metadata.source },
+      metadata: { count: rows.length, source: metadata.source, originalName },
     });
 
     return saved;
+  }
+
+  private detectUploadFormat(file: UploadedFile): UploadFormat {
+    const lower = file.originalname.toLowerCase();
+    if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+      return 'excel';
+    }
+    if (lower.endsWith('.xml')) {
+      return 'xml';
+    }
+    if (lower.endsWith('.hmt') || lower.endsWith('.html') || lower.endsWith('.htm')) {
+      return 'hmt';
+    }
+    if (lower.endsWith('.pdf')) {
+      return 'pdf';
+    }
+
+    const mime = file.mimetype.toLowerCase();
+    if (mime.includes('sheet') || mime.includes('excel')) {
+      return 'excel';
+    }
+    if (mime.includes('xml')) {
+      return 'xml';
+    }
+    if (mime.includes('html')) {
+      return 'hmt';
+    }
+    if (mime.includes('pdf')) {
+      return 'pdf';
+    }
+
+    throw new BadRequestException(
+      `Unsupported file type for ${file.originalname}. Supported formats: Excel, XML, HMT/HTML, PDF.`,
+    );
+  }
+
+  private parseExcelRows(file: UploadedFile) {
+    const xlsx = this.loadXlsx();
+    const workbook = xlsx.read(file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const datasheet = workbook.Sheets[sheetName];
+    return xlsx.utils.sheet_to_json(datasheet);
+  }
+
+  private parseXmlRows(file: UploadedFile) {
+    const content = file.buffer.toString('utf8');
+    return this.extractStructuredRowsFromMarkup(content);
+  }
+
+  private parseHmtRows(file: UploadedFile) {
+    const content = file.buffer.toString('utf8');
+    return this.extractStructuredRowsFromMarkup(content);
+  }
+
+  private parsePdfRows(file: UploadedFile) {
+    const text = this.extractTextFromPdf(file.buffer);
+    const rows = this.parseStructuredTextRows(text);
+    if (rows.length) {
+      return rows;
+    }
+
+    return [
+      {
+        fullName: this.extractFirstMeaningfulLine(text) || file.originalname,
+        otherInfo: text.slice(0, 4000),
+      },
+    ];
+  }
+
+  private extractStructuredRowsFromMarkup(content: string) {
+    if (/<table[\s>]/i.test(content)) {
+      const tableRows = this.parseHtmlTableRows(content);
+      if (tableRows.length) {
+        return tableRows;
+      }
+    }
+
+    const xmlRows = this.parseXmlEntryRows(content);
+    if (xmlRows.length) {
+      return xmlRows;
+    }
+
+    const textRows = this.parseStructuredTextRows(this.stripMarkup(content));
+    if (textRows.length) {
+      return textRows;
+    }
+
+    return [];
+  }
+
+  private parseHtmlTableRows(content: string) {
+    const rowMatches = [...content.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
+    if (rowMatches.length < 2) {
+      return [];
+    }
+
+    const parsedRows = rowMatches.map((match) => {
+      const cells = [...match[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+      return cells.map((cell) => this.cleanMarkupText(cell[1]));
+    });
+
+    const headers = parsedRows[0];
+    const dataRows = parsedRows.slice(1).filter((row) =>
+      row.some((cell) => cell && cell.trim().length > 0),
+    );
+
+    return dataRows.map((row) => {
+      const obj: Record<string, string> = {};
+      headers.forEach((header, index) => {
+        const key = header || `column_${index + 1}`;
+        obj[key] = row[index] || '';
+      });
+      return obj;
+    });
+  }
+
+  private parseXmlEntryRows(content: string) {
+    const candidateTags = ['record', 'entry', 'individual', 'entity', 'item', 'person'];
+    const lower = content.toLowerCase();
+    const repeatedTag =
+      candidateTags.find((tag) => {
+        const count = (lower.match(new RegExp(`<${tag}\\b`, 'g')) || []).length;
+        return count > 1;
+      }) || 'record';
+
+    const entryMatches = [
+      ...content.matchAll(
+        new RegExp(`<${repeatedTag}\\b[^>]*>([\\s\\S]*?)<\\/${repeatedTag}>`, 'gi'),
+      ),
+    ];
+
+    return entryMatches
+      .map((match) => {
+        const entry: Record<string, string> = {};
+        const fieldMatches = [
+          ...match[1].matchAll(/<([a-zA-Z0-9_:-]+)\b[^>]*>([\s\S]*?)<\/\1>/g),
+        ];
+
+        for (const fieldMatch of fieldMatches) {
+          const key = fieldMatch[1];
+          const value = this.cleanMarkupText(fieldMatch[2]);
+          if (!/<[a-zA-Z]/.test(fieldMatch[2]) && value) {
+            entry[key] = value;
+          }
+        }
+
+        return entry;
+      })
+      .filter((entry) => Object.keys(entry).length > 0);
+  }
+
+  private parseStructuredTextRows(text: string) {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => line.length > 1);
+
+    const rows: Record<string, string>[] = [];
+    let current: Record<string, string> = {};
+
+    for (const line of lines) {
+      const parsed = line.match(/^([A-Za-z][A-Za-z0-9 /_-]{1,40})\s*[:\-]\s*(.+)$/);
+      if (parsed) {
+        const rawKey = parsed[1].trim();
+        const value = parsed[2].trim();
+        const normalizedKey = this.normalizeFieldKey(rawKey);
+
+        if (
+          current.fullName &&
+          ['fullname', 'name1', 'groupid'].includes(normalizedKey)
+        ) {
+          rows.push(current);
+          current = {};
+        }
+
+        current[rawKey] = value;
+        continue;
+      }
+
+      if (!current.fullName && !current['Full Name'] && !current['Name']) {
+        current['Full Name'] = line;
+      } else {
+        current['Other Information'] = current['Other Information']
+          ? `${current['Other Information']} ${line}`
+          : line;
+      }
+    }
+
+    if (Object.keys(current).length > 0) {
+      rows.push(current);
+    }
+
+    return rows;
+  }
+
+  private extractTextFromPdf(buffer: Buffer) {
+    const binary = buffer.toString('latin1');
+    const textChunks: string[] = [];
+
+    for (const match of binary.matchAll(/\(([^()]*(?:\\.[^()]*)*)\)\s*Tj/g)) {
+      const value = this.decodePdfString(match[1]);
+      if (value.trim()) {
+        textChunks.push(value);
+      }
+    }
+
+    for (const match of binary.matchAll(/\[(.*?)\]\s*TJ/gs)) {
+      const group = match[1];
+      for (const part of group.matchAll(/\(([^()]*(?:\\.[^()]*)*)\)/g)) {
+        const value = this.decodePdfString(part[1]);
+        if (value.trim()) {
+          textChunks.push(value);
+        }
+      }
+    }
+
+    if (!textChunks.length) {
+      const fallbackChunks = binary.match(/[A-Za-z0-9][A-Za-z0-9 ,.:;/'"()_-]{4,}/g) || [];
+      textChunks.push(...fallbackChunks);
+    }
+
+    return textChunks
+      .map((chunk) => chunk.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private decodePdfString(value: string) {
+    return value
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\(/g, '(')
+      .replace(/\\\)/g, ')')
+      .replace(/\\\\/g, '\\')
+      .replace(/\\([0-7]{3})/g, (_, octal) =>
+        String.fromCharCode(parseInt(octal, 8)),
+      );
+  }
+
+  private normalizeImportedRow(row: Record<string, any>) {
+    const normalized = this.normalizeObjectKeys(row);
+    const address1 =
+      this.pickValue(normalized, ['addr1', 'address1', 'address', 'location']) || '';
+    const address2 = this.pickValue(normalized, ['addr2', 'address2']) || '';
+    const address3 = this.pickValue(normalized, ['addr3', 'address3']) || '';
+
+    const fullName =
+      this.pickValue(normalized, ['fullname', 'name', 'primaryname']) ||
+      [
+        this.pickValue(normalized, ['name1']),
+        this.pickValue(normalized, ['name2']),
+        this.pickValue(normalized, ['name3']),
+        this.pickValue(normalized, ['name4']),
+        this.pickValue(normalized, ['name5']),
+        this.pickValue(normalized, ['name6']),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+    return {
+      fullName: fullName || undefined,
+      alias:
+        this.pickValue(normalized, ['alias', 'aka', 'aliasname']) || null,
+      dob: this.parseExcelDate(
+        this.pickValue(normalized, ['dob', 'dateofbirth']),
+      ),
+      nationality:
+        this.pickValue(normalized, ['nationality']) ||
+        this.pickValue(normalized, ['country']) ||
+        null,
+      placeOfBirth:
+        this.pickValue(normalized, ['placeofbirth', 'townofbirth']) || null,
+      townOfBirth:
+        this.pickValue(normalized, ['townofbirth', 'placeofbirth']) || null,
+      countryOfBirth:
+        this.pickValue(normalized, ['countryofbirth']) || null,
+      addresses: [address1, address2, address3].filter(Boolean),
+      groupId:
+        this.pickValue(normalized, ['groupid', 'group']) || null,
+      listedOn: this.parseExcelDate(
+        this.pickValue(normalized, ['listedon', 'uksanctionslistdate']),
+      ),
+      otherInfo:
+        this.pickValue(normalized, ['otherinformation', 'otherinfo', 'notes']) ||
+        null,
+      passportNum:
+        this.pickValue(normalized, ['passportnumber', 'passportnum']) || null,
+      nationalId:
+        this.pickValue(normalized, ['nationalid', 'nationalidnumber']) || null,
+      name1: this.pickValue(normalized, ['name1']) || null,
+      name2: this.pickValue(normalized, ['name2']) || null,
+      name3: this.pickValue(normalized, ['name3']) || null,
+      name4: this.pickValue(normalized, ['name4']) || null,
+      name5: this.pickValue(normalized, ['name5']) || null,
+      name6: this.pickValue(normalized, ['name6']) || null,
+      title: this.pickValue(normalized, ['title']) || null,
+      nameNonLatin:
+        this.pickValue(normalized, ['namenonlatinscript', 'namenonlatin']) || null,
+      country: this.pickValue(normalized, ['country']) || null,
+      groupType: this.pickValue(normalized, ['grouptype', 'type']) || null,
+      aliasType: this.pickValue(normalized, ['aliastype']) || null,
+      addr1: address1 || null,
+      addr2: address2 || null,
+      addr3: address3 || null,
+      addr4:
+        this.pickValue(normalized, ['addr4', 'city', 'address4']) || null,
+      addr5:
+        this.pickValue(normalized, ['addr5', 'state', 'province', 'address5']) ||
+        null,
+      addr6: this.pickValue(normalized, ['addr6', 'address6']) || null,
+      zipCode:
+        this.pickValue(normalized, ['zipcode', 'postalcode', 'postcode']) || null,
+    };
+  }
+
+  private normalizeObjectKeys(row: Record<string, any>) {
+    return Object.entries(row || {}).reduce<Record<string, any>>((acc, [key, value]) => {
+      const normalizedKey = this.normalizeFieldKey(key);
+      acc[normalizedKey] = typeof value === 'string' ? value.trim() : value;
+      return acc;
+    }, {});
+  }
+
+  private normalizeFieldKey(key: string) {
+    return String(key).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  }
+
+  private pickValue(row: Record<string, any>, keys: string[]) {
+    for (const key of keys) {
+      const value = row[this.normalizeFieldKey(key)];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  private cleanMarkupText(value: string) {
+    return this.decodeHtmlEntities(
+      value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+    );
+  }
+
+  private stripMarkup(value: string) {
+    return this.decodeHtmlEntities(value.replace(/<[^>]+>/g, '\n'));
+  }
+
+  private decodeHtmlEntities(value: string) {
+    return value
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
+  }
+
+  private rowHasContent(row: Record<string, any>) {
+    return Object.values(row).some(
+      (value) => value !== null && value !== undefined && String(value).trim() !== '',
+    );
+  }
+
+  private extractFirstMeaningfulLine(text: string) {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 2);
+  }
+
+  private normalizeStatus(status: string): BlacklistStatusEnum {
+    const upper = String(status).toUpperCase();
+    if (Object.values(BlacklistStatusEnum).includes(upper as BlacklistStatusEnum)) {
+      return upper as BlacklistStatusEnum;
+    }
+    return BlacklistStatusEnum.READY;
   }
 
   async bulkCreate(payload: { source: string; blacklistId?: string; entries: any[]; createdById?: string }) {

@@ -57,4 +57,9 @@ export class UserController {
   confirmAccount(@Param('token') token: string) {
     return this.userService.confirmAccount(token);
   }
+
+  @Get('confirm/:token')
+  confirmAccountFromLink(@Param('token') token: string) {
+    return this.userService.confirmAccount(token);
+  }
 }

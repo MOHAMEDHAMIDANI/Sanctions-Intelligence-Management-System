@@ -67,4 +67,8 @@ export class AuthService {
   async resendOtp(email: string) {
     return this.login({ email });
   }
+
+  async confirmAccount(token: string) {
+    return this.userService.confirmAccount(token);
+  }
 }

@@ -30,6 +30,7 @@ import { AggregateSnapshotModule } from './aggregate-snapshot/aggregate-snapshot
 import { DatabaseModule } from './database/database.module';
 import { ReviewModule } from './review/review.module';
 import { NotificationModule } from './notification/notification.module';
+import { WebhookModule } from './webhook/webhook.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { NotificationModule } from './notification/notification.module';
     DatabaseModule,
     ReviewModule,
     NotificationModule,
+    WebhookModule,
   ],
   controllers: [AppController],
   providers: [AppService],

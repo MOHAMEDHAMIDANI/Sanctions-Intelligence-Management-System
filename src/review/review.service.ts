@@ -8,6 +8,8 @@ import { BlacklistStatusEnum } from '../common/enums/blacklist-status.enum';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditActionEnum } from '../common/enums/audit-action.enum';
 import { NotificationService } from '../notification/notification.service';
+import { WebhookEventTypeEnum } from '../webhook/enums/webhook-event-type.enum';
+import { WebhookService } from '../webhook/webhook.service';
 
 @Injectable()
 export class ReviewService {
@@ -16,6 +18,7 @@ export class ReviewService {
     private readonly sanctionedEntityService: SanctionedEntityService,
     private readonly auditLogService: AuditLogService,
     private readonly notificationService: NotificationService,
+    private readonly webhookService: WebhookService,
   ) {}
 
   async create(createReviewDto: CreateReviewDto) {
@@ -44,6 +47,20 @@ export class ReviewService {
       await this.sanctionedEntityService.update(sanctionedEntity.id, {
         status: BlacklistStatusEnum.VALID,
       });
+
+      try {
+        await this.webhookService.distributeBatch(
+          sanctionedEntity.id,
+          WebhookEventTypeEnum.BATCH_VALIDATED,
+          undefined,
+          { allowNoTargets: true },
+        );
+      } catch (err) {
+        const error = err as Error;
+        console.error(
+          `[ReviewService] Automatic webhook distribution failed for batch ${sanctionedEntity.id}: ${error.message}`,
+        );
+      }
     }
 
     if (

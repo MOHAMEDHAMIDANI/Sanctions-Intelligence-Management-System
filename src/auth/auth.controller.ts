@@ -19,18 +19,27 @@ export class AuthController {
     return this.authService.verifyOtp(verifyOtpDto);
   }
 
+  @Post('verify-otp')
+  @HttpCode(HttpStatus.OK)
+  async verifyOtpAlias(@Body() verifyOtpDto: VerifyOtpDto) {
+    return this.authService.verifyOtp(verifyOtpDto);
+  }
+
   @Post('otp/send')
   @HttpCode(HttpStatus.OK)
   async resendOtp(@Body() body: { email: string }) {
     return this.authService.resendOtp(body.email);
   }
 
+  @Post('send-otp')
+  @HttpCode(HttpStatus.OK)
+  async sendOtp(@Body() body: { email: string }) {
+    return this.authService.resendOtp(body.email);
+  }
+
   @Post('confirm/:token')
   @HttpCode(HttpStatus.OK)
   async confirmAccount(@Param('token') token: string) {
-    // This will be handled in authService which calls userService
-    // For now, I'll assume authService exports this.
-    // Return this.authService.confirmAccount(token);
-    // Actually, according to implementation plan, UserService handles confirmation.
+    return this.authService.confirmAccount(token);
   }
 }

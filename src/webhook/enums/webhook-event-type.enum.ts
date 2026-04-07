@@ -1,0 +1,4 @@
+export enum WebhookEventTypeEnum {
+  BATCH_VALIDATED = 'BATCH_VALIDATED',
+  BATCH_REJECTED = 'BATCH_REJECTED',
+}

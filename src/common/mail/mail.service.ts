@@ -33,6 +33,39 @@ export class MailService {
     );
   }
 
+  private trimTrailingSlash(url: string) {
+    return url.replace(/\/+$/, '');
+  }
+
+  private buildInviteUrl(token: string) {
+    const encodedToken = encodeURIComponent(token);
+    const inviteUrlTemplate = this.configService.get<string>('INVITE_URL_TEMPLATE');
+
+    if (inviteUrlTemplate) {
+      return inviteUrlTemplate
+        .replace('{{token}}', encodedToken)
+        .replace('{token}', encodedToken);
+    }
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    if (frontendUrl) {
+      return `${this.trimTrailingSlash(frontendUrl)}/confirm-account?token=${encodedToken}`;
+    }
+
+    const backendUrl =
+      this.configService.get<string>('BACKEND_URL') ||
+      this.configService.get<string>('APP_URL');
+    if (backendUrl) {
+      return `${this.trimTrailingSlash(backendUrl)}/user/confirm/${encodedToken}`;
+    }
+
+    const fallbackBaseUrl = `http://localhost:${this.configService.get<string>('PORT', '3000')}`;
+    this.logger.warn(
+      `FRONTEND_URL and BACKEND_URL are not configured. Falling back to ${fallbackBaseUrl} for invite links.`,
+    );
+    return `${fallbackBaseUrl}/user/confirm/${encodedToken}`;
+  }
+
   private assertSmtpConfig() {
     const requiredValues = {
       SMTP_HOST: this.configService.get<string>('SMTP_HOST'),
@@ -77,8 +110,7 @@ export class MailService {
   }
 
   async sendInviteEmail(to: string, token: string) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
-    const inviteUrl = `${frontendUrl}/confirm-account?token=${token}`;
+    const inviteUrl = this.buildInviteUrl(token);
 
     await this.sendMail({
       to,

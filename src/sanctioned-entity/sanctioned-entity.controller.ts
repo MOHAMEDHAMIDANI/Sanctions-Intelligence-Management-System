@@ -94,7 +94,10 @@ export class SanctionedEntityController {
     @Body() metadata: any,
     @Request() req: any,
   ) {
-    return this.sanctionedEntityService.processExcelUpload(file, { ...metadata, createdById: req.user.id });
+    return this.sanctionedEntityService.processUploadedFile(file, {
+      ...metadata,
+      createdById: req.user.id,
+    });
   }
 
   // ── Entry-level CRUD (EntityProfile inside a batch) ──
