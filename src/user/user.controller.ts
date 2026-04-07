@@ -33,6 +33,13 @@ export class UserController {
     return this.userService.findAll();
   }
 
+  @Get(':id/invite-link')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN)
+  getInviteLink(@Param('id') id: string) {
+    return this.userService.getInviteLink(id);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id') id: string) {

@@ -26,6 +26,10 @@ export class MailService {
     });
   }
 
+  isMailEnabled() {
+    return String(this.configService.get('MAIL_ENABLED', 'true')).toLowerCase() !== 'false';
+  }
+
   private getFromAddress() {
     return (
       this.configService.get<string>('MAIL_FROM') ||
@@ -64,6 +68,10 @@ export class MailService {
       `FRONTEND_URL and BACKEND_URL are not configured. Falling back to ${fallbackBaseUrl} for invite links.`,
     );
     return `${fallbackBaseUrl}/user/confirm/${encodedToken}`;
+  }
+
+  getInviteUrl(token: string) {
+    return this.buildInviteUrl(token);
   }
 
   private assertSmtpConfig() {

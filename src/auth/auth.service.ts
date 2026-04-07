@@ -31,10 +31,29 @@ export class AuthService {
     // Save OTP to user (not shown here, assumed to be in userService)
     await this.userService.saveOtp(user.id, otp, expiry);
 
-    // Send OTP via email
-    await this.mailService.sendOtpEmail(user.email, otp);
+    if (this.mailService.isMailEnabled()) {
+      try {
+        await this.mailService.sendOtpEmail(user.email, otp);
+        return { message: 'OTP sent to your email', delivery: 'email' };
+      } catch (error) {
+        const err = error as Error;
+        return {
+          message: 'OTP generated locally because email delivery failed',
+          delivery: 'local',
+          otpCode: otp,
+          otpExpiresAt: expiry,
+          warning: err.message,
+        };
+      }
+    }
 
-    return { message: 'OTP sent to your email' };
+    return {
+      message: 'OTP generated locally',
+      delivery: 'local',
+      otpCode: otp,
+      otpExpiresAt: expiry,
+      warning: 'Email delivery is disabled. Use the local OTP code instead.',
+    };
   }
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto) {

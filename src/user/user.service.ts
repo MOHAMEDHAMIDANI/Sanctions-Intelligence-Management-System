@@ -1,7 +1,6 @@
 import {
   Injectable,
   BadRequestException,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { UserRepository } from './user.repository';
@@ -35,17 +34,30 @@ export class UserService {
     });
 
     const savedUser = await this.userRepository.save(user);
+    const inviteUrl = this.mailService.getInviteUrl(inviteToken);
+    let invitationDelivery: 'email' | 'local' = 'local';
+    let invitationWarning: string | undefined;
 
-    try {
-      await this.mailService.sendInviteEmail(savedUser.email, inviteToken);
-    } catch {
-      await this.userRepository.delete(savedUser.id);
-      throw new InternalServerErrorException(
-        'User could not be created because the invitation email failed to send',
-      );
+    if (this.mailService.isMailEnabled()) {
+      try {
+        await this.mailService.sendInviteEmail(savedUser.email, inviteToken);
+        invitationDelivery = 'email';
+      } catch (error) {
+        const err = error as Error;
+        invitationWarning =
+          err.message || 'Invitation email failed to send. Use the local invite link instead.';
+      }
+    } else {
+      invitationWarning =
+        'Email delivery is disabled. Use the local invite link instead.';
     }
 
-    return savedUser;
+    return {
+      ...savedUser,
+      inviteUrl,
+      invitationDelivery,
+      invitationWarning,
+    };
   }
 
   async findAll() {
@@ -116,5 +128,37 @@ export class UserService {
     await this.userRepository.save(user);
 
     return { message: 'Account confirmed successfully' };
+  }
+
+  async getInviteLink(id: string) {
+    const user = await this.userRepository.findOne({
+      where: { id } as any,
+      select: [
+        'id',
+        'email',
+        'isConfirmed',
+        'inviteToken',
+        'inviteTokenExpiry',
+      ],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.isConfirmed) {
+      throw new BadRequestException('User account is already confirmed');
+    }
+
+    if (!user.inviteToken || !user.inviteTokenExpiry || isAfter(new Date(), user.inviteTokenExpiry)) {
+      throw new BadRequestException('Invitation token is missing or expired');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      inviteUrl: this.mailService.getInviteUrl(user.inviteToken),
+      inviteTokenExpiry: user.inviteTokenExpiry,
+    };
   }
 }
