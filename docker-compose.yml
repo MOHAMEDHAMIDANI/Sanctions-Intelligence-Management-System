@@ -41,6 +41,8 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - ELASTICSEARCH_NODE=http://elasticsearch:9200
+      - NODE_ENV=development
+      - MAIL_ENABLED=false
     ports:
       - "${PORT:-3000}:3000"
     env_file:
