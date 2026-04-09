@@ -2,41 +2,48 @@ import { Controller, Post, Body, HttpCode, HttpStatus, Param } from '@nestjs/com
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { Public } from './decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
 
+  @Public()
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtp(verifyOtpDto);
   }
 
+  @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
   async verifyOtpAlias(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyOtp(verifyOtpDto);
   }
 
+  @Public()
   @Post('otp/send')
   @HttpCode(HttpStatus.OK)
   async resendOtp(@Body() body: { email: string }) {
     return this.authService.resendOtp(body.email);
   }
 
+  @Public()
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
   async sendOtp(@Body() body: { email: string }) {
     return this.authService.resendOtp(body.email);
   }
 
+  @Public()
   @Post('confirm/:token')
   @HttpCode(HttpStatus.OK)
   async confirmAccount(@Param('token') token: string) {

@@ -24,12 +24,15 @@ export class EvidenceDocumentService {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    const filename = `${Date.now()}-${file.originalname}`;
+    const safeOriginalName = path
+      .basename(file.originalname)
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = `${Date.now()}-${safeOriginalName}`;
     const filePath = path.join(uploadDir, filename);
     fs.writeFileSync(filePath, file.buffer);
 
     const document = this.evidenceDocumentRepository.create({
-      originalName: file.originalname,
+      originalName: safeOriginalName,
       storagePath: `/uploads/${filename}`,
       sanctionedEntityId: entityId,
       mimeType: file.mimetype,

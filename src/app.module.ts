@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ElasticsearchModule } from '@nestjs/elasticsearch';
+import * as Joi from 'joi';
 
 import { EncryptionModule } from './common/encryption/encryption.module';
 import { AuthModule } from './auth/auth.module';
@@ -31,11 +33,59 @@ import { DatabaseModule } from './database/database.module';
 import { ReviewModule } from './review/review.module';
 import { NotificationModule } from './notification/notification.module';
 import { WebhookModule } from './webhook/webhook.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validationSchema: Joi.object({
+        PORT: Joi.number().default(3000),
+        NODE_ENV: Joi.string()
+          .valid('development', 'test', 'production')
+          .default('development'),
+        FRONTEND_URL: Joi.string().required(),
+        BACKEND_URL: Joi.string().optional(),
+        SUPER_ADMIN_EMAIL: Joi.string().email().optional(),
+        DB_HOST: Joi.string().required(),
+        DB_PORT: Joi.number().required(),
+        DB_USER: Joi.string().required(),
+        DB_PASSWORD: Joi.string().required(),
+        DB_NAME: Joi.string().required(),
+        ELASTICSEARCH_NODE: Joi.string().required(),
+        JWT_SECRET: Joi.string().min(16).required(),
+        JWT_EXPIRATION: Joi.string().required(),
+        ENCRYPTION_KEYS: Joi.string().required(),
+        MAIL_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+        SMTP_HOST: Joi.when('MAIL_ENABLED', {
+          is: true,
+          then: Joi.string().required(),
+          otherwise: Joi.string().allow('', null).optional(),
+        }),
+        SMTP_PORT: Joi.when('MAIL_ENABLED', {
+          is: true,
+          then: Joi.number().required(),
+          otherwise: Joi.number().optional(),
+        }),
+        SMTP_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
+        SMTP_USER: Joi.when('MAIL_ENABLED', {
+          is: true,
+          then: Joi.string().required(),
+          otherwise: Joi.string().allow('', null).optional(),
+        }),
+        SMTP_PASSWORD: Joi.when('MAIL_ENABLED', {
+          is: true,
+          then: Joi.string().required(),
+          otherwise: Joi.string().allow('', null).optional(),
+        }),
+        MAIL_FROM: Joi.when('MAIL_ENABLED', {
+          is: true,
+          then: Joi.string().required(),
+          otherwise: Joi.string().allow('', null).optional(),
+        }),
+        INVITE_URL_TEMPLATE: Joi.string().optional(),
+      }),
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -47,7 +97,7 @@ import { WebhookModule } from './webhook/webhook.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true, // Use migrations in production
+        synchronize: false,
       }),
       inject: [ConfigService],
     }),
@@ -86,6 +136,16 @@ import { WebhookModule } from './webhook/webhook.module';
     WebhookModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+  ],
 })
 export class AppModule {}

@@ -3,15 +3,15 @@ import {
   Get,
   Post,
   Body,
-  Patch,
   Param,
-  Delete,
+  Query,
 } from '@nestjs/common';
 import { AuditLogService } from './audit-log.service';
 import { CreateAuditLogDto } from './dto/create-audit-log.dto';
-import { UpdateAuditLogDto } from './dto/update-audit-log.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('audit-log')
+@Roles('admin')
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 
@@ -21,25 +21,16 @@ export class AuditLogController {
   }
 
   @Get()
-  findAll() {
-    return this.auditLogService.findAll();
+  findAll(
+    @Query('entityId') entityId?: string,
+    @Query('entityType') entityType?: string,
+    @Query('batchId') batchId?: string,
+  ) {
+    return this.auditLogService.findAll({ entityId, entityType, batchId });
   }
 
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.auditLogService.findOne(id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateAuditLogDto: UpdateAuditLogDto,
-  ) {
-    return this.auditLogService.update(id, updateAuditLogDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.auditLogService.remove(id);
   }
 }

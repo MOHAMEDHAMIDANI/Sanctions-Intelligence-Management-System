@@ -11,20 +11,15 @@ export class EncryptionService {
   constructor(private configService: ConfigService) {
     const keysString = this.configService.get<string>('ENCRYPTION_KEYS');
     if (!keysString) {
-      this.logger.warn(
-        'ENCRYPTION_KEYS not found in config. Using fallback key for dev only.',
+      throw new Error('ENCRYPTION_KEYS is required for encrypted fields');
+    }
+
+    this.keys = keysString.split(',').map((k) => Buffer.from(k.trim(), 'utf8'));
+    if (this.keys.length === 0 || this.keys[0].length !== 32) {
+      this.logger.error('Invalid ENCRYPTION_KEYS configuration');
+      throw new Error(
+        'Invalid ENCRYPTION_KEYS. Must be comma separated string of 32-byte keys.',
       );
-      // 32 byte fallback key
-      this.keys = [Buffer.from('12345678901234567890123456789012', 'utf8')];
-    } else {
-      this.keys = keysString
-        .split(',')
-        .map((k) => Buffer.from(k.trim(), 'utf8'));
-      if (this.keys.length === 0 || this.keys[0].length !== 32) {
-        throw new Error(
-          'Invalid ENCRYPTION_KEYS. Must be comma separated string of 32-byte keys.',
-        );
-      }
     }
   }
 

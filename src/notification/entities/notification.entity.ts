@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
@@ -13,6 +14,7 @@ export class Notification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('IDX_notifications_userId')
   @Column({ type: 'uuid' })
   userId: string;
 
@@ -32,6 +34,7 @@ export class Notification {
   @Column({ default: false })
   isRead: boolean;
 
+  @Index('IDX_notifications_createdAt')
   @CreateDateColumn()
   createdAt: Date;
 }

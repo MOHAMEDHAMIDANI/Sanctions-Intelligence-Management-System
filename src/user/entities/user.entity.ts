@@ -46,6 +46,12 @@ export class User {
   @Column({ type: 'timestamp', nullable: true, select: false })
   otpExpiry: Date;
 
+  @Column({ type: 'int', default: 0, select: false })
+  otpAttemptCount: number;
+
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  otpLockedUntil?: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

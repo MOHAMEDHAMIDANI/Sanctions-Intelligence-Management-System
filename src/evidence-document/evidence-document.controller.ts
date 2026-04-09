@@ -8,11 +8,13 @@ import {
   Delete,
   UseInterceptors,
   UploadedFile,
+  ParseFilePipeBuilder,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { EvidenceDocumentService } from './evidence-document.service';
 import { CreateEvidenceDocumentDto } from './dto/create-evidence-document.dto';
 import { UpdateEvidenceDocumentDto } from './dto/update-evidence-document.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 type UploadedFile = {
   originalname: string;
@@ -22,6 +24,7 @@ type UploadedFile = {
 };
 
 @Controller('evidence-document')
+@Roles('admin', 'compliance', 'auditor')
 export class EvidenceDocumentController {
   constructor(
     private readonly evidenceDocumentService: EvidenceDocumentService,
@@ -31,7 +34,18 @@ export class EvidenceDocumentController {
   @UseInterceptors(FileInterceptor('file'))
   uploadFile(
     @Param('entityId') entityId: string,
-    @UploadedFile() file: UploadedFile,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 10 * 1024 * 1024 })
+        .addFileTypeValidator({
+          fileType:
+            /^(application\/pdf|image\/jpeg|image\/png|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/,
+        })
+        .build({
+          fileIsRequired: true,
+        }),
+    )
+    file: UploadedFile,
   ) {
     return this.evidenceDocumentService.handleUpload(entityId, file);
   }

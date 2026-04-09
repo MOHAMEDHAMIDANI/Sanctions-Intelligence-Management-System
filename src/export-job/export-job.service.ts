@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotImplementedException } from '@nestjs/common';
 import { ExportJobRepository } from './export-job.repository';
 import { CreateExportJobDto } from './dto/create-export-job.dto';
 import { UpdateExportJobDto } from './dto/update-export-job.dto';
@@ -8,22 +8,22 @@ export class ExportJobService {
   constructor(private readonly exportJobRepository: ExportJobRepository) {}
 
   create(createExportJobDto: CreateExportJobDto) {
-    return 'This action adds a new exportJob';
+    throw new NotImplementedException('Export jobs are not implemented yet');
   }
 
   findAll() {
-    return `This action returns all exportJob`;
+    throw new NotImplementedException('Export jobs are not implemented yet');
   }
 
   findOne(id: string) {
-    return `This action returns a #exportJob id`;
+    throw new NotImplementedException('Export jobs are not implemented yet');
   }
 
   update(id: string, updateExportJobDto: UpdateExportJobDto) {
-    return `This action updates a #exportJob id`;
+    throw new NotImplementedException('Export jobs are not implemented yet');
   }
 
   remove(id: string) {
-    return `This action removes a #exportJob id`;
+    throw new NotImplementedException('Export jobs are not implemented yet');
   }
 }

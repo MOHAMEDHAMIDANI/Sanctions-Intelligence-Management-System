@@ -1,15 +1,15 @@
 import {
+  IsArray,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
-  IsUUID,
-  Allow,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { BlacklistStatusEnum } from '../../common/enums/blacklist-status.enum';
-import { PartialType } from '@nestjs/swagger';
 
 export class CreateSanctionedEntityDto {
   @IsString()
@@ -32,33 +32,15 @@ export class CreateSanctionedEntityDto {
   date?: string;
 
   @IsOptional()
+  @IsNumber()
   entriesCount?: number;
 
   @IsOptional()
-  manualData?: any[];
+  @IsArray()
+  @IsObject({ each: true })
+  manualData?: Record<string, unknown>[];
 
   @IsOptional()
   @IsString()
   version?: string;
-
-  @IsOptional()
-  @IsUUID()
-  createdById?: string;
-
-  // --- SYSTEM FIELDS (Ignored but allowed for round-trips) ---
-  @IsOptional()
-  @Allow()
-  id?: string;
-
-  @IsOptional()
-  @Allow()
-  createdAt?: Date | string;
-
-  @IsOptional()
-  @Allow()
-  updatedAt?: Date | string;
-
-  @IsOptional()
-  @Allow()
-  deletedAt?: Date | string | null;
 }

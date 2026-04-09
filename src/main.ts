@@ -3,7 +3,6 @@ import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 import * as bodyParser from 'body-parser';
 import rateLimit from 'express-rate-limit';
 
@@ -14,11 +13,6 @@ async function bootstrap() {
   // 0. Increase body size limit for large Excel/bulk uploads
   app.use(bodyParser.json({ limit: '50mb' }));
   app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-
-  // 0.5 Static Assets
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/',
-  });
 
   // 1. Enable Global Validation
   app.useGlobalPipes(

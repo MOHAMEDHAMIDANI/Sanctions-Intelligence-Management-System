@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
@@ -17,6 +18,7 @@ export class Review {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('IDX_reviews_sanctionedEntityId')
   @Column({ type: 'uuid' })
   sanctionedEntityId: string;
 
@@ -28,6 +30,7 @@ export class Review {
   @JoinColumn({ name: 'sanctionedEntityId' })
   sanctionedEntity: SanctionedEntity;
 
+  @Index('IDX_reviews_reviewerId')
   @Column({ type: 'uuid' })
   reviewerId: string;
 
@@ -35,6 +38,7 @@ export class Review {
   @JoinColumn({ name: 'reviewerId' })
   reviewer: User;
 
+  @Index('IDX_reviews_decision')
   @Column({
     type: 'enum',
     enum: ReviewDecisionEnum,

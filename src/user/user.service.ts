@@ -1,6 +1,8 @@
 import {
   Injectable,
   BadRequestException,
+  HttpException,
+  HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
 import { UserRepository } from './user.repository';
@@ -9,6 +11,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { MailService } from '../common/mail/mail.service';
 import { nanoid } from 'nanoid';
 import { addDays, isAfter } from 'date-fns';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
@@ -86,27 +89,54 @@ export class UserService {
   }
 
   async saveOtp(id: string, otp: string, expiry: Date) {
+    const otpCode = await bcrypt.hash(otp, 10);
+
     await this.userRepository.update(id, {
-      otpCode: otp,
+      otpCode,
       otpExpiry: expiry,
+      otpAttemptCount: 0,
+      otpLockedUntil: null,
     });
   }
 
   async validateOtp(id: string, otp: string) {
-    // Need to select otpCode and otpExpiry as they are hidden by default
     const user = await this.userRepository.findOne({
       where: { id: id as any },
-      select: ['id', 'otpCode', 'otpExpiry'],
+      select: ['id', 'otpCode', 'otpExpiry', 'otpAttemptCount', 'otpLockedUntil'],
     });
 
-    if (!user || user.otpCode !== otp || isAfter(new Date(), user.otpExpiry)) {
+    if (!user) {
       return false;
     }
 
-    // Clear OTP after successful validation
+    if (user.otpLockedUntil && isAfter(user.otpLockedUntil, new Date())) {
+      throw new HttpException(
+        'Too many invalid OTP attempts. Try again after the lockout expires.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (!user.otpCode || !user.otpExpiry || isAfter(new Date(), user.otpExpiry)) {
+      return false;
+    }
+
+    const isValid = await bcrypt.compare(otp, user.otpCode);
+
+    if (!isValid) {
+      const nextAttempts = (user.otpAttemptCount || 0) + 1;
+      const shouldLock = nextAttempts >= 5;
+      await this.userRepository.update(id, {
+        otpAttemptCount: shouldLock ? 0 : nextAttempts,
+        otpLockedUntil: shouldLock ? new Date(Date.now() + 15 * 60 * 1000) : null,
+      });
+      return false;
+    }
+
     await this.userRepository.update(id, {
       otpCode: null,
       otpExpiry: null,
+      otpAttemptCount: 0,
+      otpLockedUntil: null,
     });
 
     return true;

@@ -33,8 +33,14 @@ export class SanctionedEntityController {
   // ── Batch-level CRUD ──
 
   @Post()
-  create(@Body() createSanctionedEntityDto: CreateSanctionedEntityDto) {
-    return this.sanctionedEntityService.create(createSanctionedEntityDto);
+  create(
+    @Body() createSanctionedEntityDto: CreateSanctionedEntityDto,
+    @Request() req: any,
+  ) {
+    return this.sanctionedEntityService.create(
+      createSanctionedEntityDto,
+      req.user.id,
+    );
   }
 
   @Post('bulk')

@@ -1,4 +1,5 @@
 import { ValueTransformer } from 'typeorm';
+import { Logger } from '@nestjs/common';
 import { EncryptionService } from './encryption.service';
 
 /**
@@ -7,6 +8,7 @@ import { EncryptionService } from './encryption.service';
  * because TypeORM transformers don't natively support NestJS DI.
  */
 export class EncryptionTransformer implements ValueTransformer {
+  private readonly logger = new Logger(EncryptionTransformer.name);
   private encryptionService: EncryptionService;
 
   constructor(encryptionService: EncryptionService) {
@@ -27,9 +29,9 @@ export class EncryptionTransformer implements ValueTransformer {
     try {
       return this.encryptionService.decrypt(value);
     } catch (e) {
-      // Return original value if decryption fails (e.g., legacy plaintext data)
-      // Note: this might mask real decryption errors in strict environments
-      return value;
+      const error = e as Error;
+      this.logger.error(`Failed to decrypt encrypted column value: ${error.message}`);
+      throw error;
     }
   }
 }

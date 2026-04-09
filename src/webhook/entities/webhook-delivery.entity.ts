@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -14,6 +15,11 @@ export class WebhookDelivery {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('IDX_webhook_deliveries_batchId')
+  @Column({ type: 'uuid' })
+  batchId: string;
+
+  @Index('IDX_webhook_deliveries_targetId')
   @Column({ type: 'uuid', nullable: true })
   targetId?: string | null;
 
@@ -57,6 +63,10 @@ export class WebhookDelivery {
 
   @Column({ type: 'text', nullable: true })
   errorMessage?: string | null;
+
+  @Index('IDX_webhook_deliveries_attemptedAt')
+  @CreateDateColumn()
+  attemptedAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
@@ -7,6 +12,8 @@ import { NotificationGateway } from './notification.gateway';
 
 @Injectable()
 export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
+
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
@@ -14,14 +21,12 @@ export class NotificationService {
   ) {}
 
   async create(createNotificationDto: CreateNotificationDto) {
-    console.log(`[NotificationService] Creating notification in DB for user: ${createNotificationDto.userId}`);
     const notification = this.notificationRepository.create(createNotificationDto);
     const saved = await this.notificationRepository.save(notification);
-    console.log(`[NotificationService] Notification saved correctly. Emitting WebSocket event...`);
-    
-    // Emit real-time update
+
+    this.logger.debug(`Notification persisted for user ${saved.userId}`);
     this.notificationGateway.sendNotificationToUser(saved.userId, saved);
-    
+
     return saved;
   }
 
@@ -32,10 +37,13 @@ export class NotificationService {
     });
   }
 
-  async markAsRead(id: string) {
+  async markAsRead(id: string, userId: string) {
     const notification = await this.notificationRepository.findOne({ where: { id } });
     if (!notification) {
       throw new NotFoundException('Notification not found');
+    }
+    if (notification.userId !== userId) {
+      throw new ForbiddenException('You can only update your own notifications');
     }
     notification.isRead = true;
     return this.notificationRepository.save(notification);

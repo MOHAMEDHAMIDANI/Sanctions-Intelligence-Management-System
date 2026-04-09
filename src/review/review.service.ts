@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ReviewRepository } from './review.repository';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
@@ -13,6 +18,8 @@ import { WebhookService } from '../webhook/webhook.service';
 
 @Injectable()
 export class ReviewService {
+  private readonly logger = new Logger(ReviewService.name);
+
   constructor(
     private readonly reviewRepository: ReviewRepository,
     private readonly sanctionedEntityService: SanctionedEntityService,
@@ -25,6 +32,21 @@ export class ReviewService {
     const sanctionedEntity = await this.sanctionedEntityService.findOne(
       createReviewDto.sanctionedEntityId,
     );
+
+    if (sanctionedEntity.status === BlacklistStatusEnum.VALID) {
+      throw new BadRequestException(
+        'Approved batches are locked and cannot be reviewed again.',
+      );
+    }
+
+    if (
+      createReviewDto.decision === ReviewDecisionEnum.REJECTED &&
+      (!createReviewDto.comment || createReviewDto.comment.trim().length < 20)
+    ) {
+      throw new BadRequestException(
+        'Rejection reason must be at least 20 characters long.',
+      );
+    }
 
     const review = this.reviewRepository.create(createReviewDto);
     const saved = await this.reviewRepository.save(review);
@@ -40,25 +62,31 @@ export class ReviewService {
       },
     });
 
-    if (
-      createReviewDto.decision === ReviewDecisionEnum.APPROVED &&
-      sanctionedEntity.status !== BlacklistStatusEnum.VALID
-    ) {
+    if (createReviewDto.decision === ReviewDecisionEnum.APPROVED) {
       await this.sanctionedEntityService.update(sanctionedEntity.id, {
-        status: BlacklistStatusEnum.VALID,
+        status: BlacklistStatusEnum.PROCESSING,
       });
 
       try {
-        await this.webhookService.distributeBatch(
+        const deliveries = await this.webhookService.distributeBatch(
           sanctionedEntity.id,
           WebhookEventTypeEnum.BATCH_VALIDATED,
           undefined,
           { allowNoTargets: true },
         );
+        const allSucceeded =
+          deliveries.length === 0 ||
+          deliveries.every((delivery) => delivery.status === 'SUCCESS');
+
+        await this.sanctionedEntityService.update(sanctionedEntity.id, {
+          status: allSucceeded
+            ? BlacklistStatusEnum.VALID
+            : BlacklistStatusEnum.PROCESSING,
+        });
       } catch (err) {
         const error = err as Error;
-        console.error(
-          `[ReviewService] Automatic webhook distribution failed for batch ${sanctionedEntity.id}: ${error.message}`,
+        this.logger.error(
+          `Automatic webhook distribution failed for batch ${sanctionedEntity.id}: ${error.message}`,
         );
       }
     }
@@ -73,22 +101,24 @@ export class ReviewService {
 
       // Notify the creator
       const targetUserId = sanctionedEntity.createdById || createReviewDto.reviewerId;
-      console.log(`[ReviewService] Triggering notification for user: ${targetUserId} (createdById: ${sanctionedEntity.createdById}, reviewerId: ${createReviewDto.reviewerId})`);
+      this.logger.debug(`Triggering rejection notification for user ${targetUserId}`);
       
       if (targetUserId) {
         try {
-          const notif = await this.notificationService.create({
+          await this.notificationService.create({
             userId: targetUserId,
             title: 'Batch Rejected',
             message: `Batch "${sanctionedEntity.source}" was rejected: ${createReviewDto.comment || 'No reason provided.'}${!sanctionedEntity.createdById ? ' (Note: You received this because you are the reviewer and this batch had no owner)' : ''}`,
             link: `/app/blacklists`,
           });
-          console.log(`[ReviewService] Notification created successfully in DB with ID: ${notif?.id}`);
         } catch (err) {
-          console.error(`[ReviewService] Failed to create notification: ${err.message}`);
+          const error = err as Error;
+          this.logger.error(`Failed to create notification: ${error.message}`);
         }
       } else {
-        console.warn(`[ReviewService] Skipping notification: No target user ID found (batch owner and reviewer both null)`);
+        this.logger.warn(
+          'Skipping rejection notification because no target user could be resolved',
+        );
       }
     }
 

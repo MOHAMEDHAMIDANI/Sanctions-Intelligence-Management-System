@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { ConfigService } from '@nestjs/config';
 import { EncryptionService } from './encryption.service';
 import { EncryptionTransformer } from './encryption.transformer';

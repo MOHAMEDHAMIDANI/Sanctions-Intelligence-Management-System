@@ -1,8 +1,10 @@
 import {
   IsEnum,
+  IsInt,
+  IsObject,
   IsOptional,
+  IsString,
   IsUUID,
-  Allow,
 } from 'class-validator';
 import { EntityTypeEnum } from '../../common/enums/entity-type.enum';
 import { ListTypeEnum } from '../../common/enums/list-type.enum';
@@ -29,28 +31,35 @@ export class CreateEntityProfileDto {
   quality?: QualityEnum;
 
   // --- PERSON-LEVEL FIELDS (Allowed but usually managed via rawData) ---
-  @IsOptional() @Allow() fullName?: string;
-  @IsOptional() @Allow() alias?: string;
-  @IsOptional() @Allow() dateOfBirth?: string;
-  @IsOptional() @Allow() nationality?: string;
-  @IsOptional() @Allow() groupId?: number;
-  @IsOptional() @Allow() listedOn?: string;
-  @IsOptional() @Allow() otherInformation?: string;
-  @IsOptional() @Allow() rawData?: any;
+  @IsOptional()
+  @IsString()
+  fullName?: string;
 
-  // --- SYSTEM & RELATIONAL FIELDS (Ignored but allowed for round-trips) ---
-  @IsOptional() @Allow() id?: string;
-  @IsOptional() @Allow() createdAt?: Date | string;
-  @IsOptional() @Allow() updatedAt?: Date | string;
-  @IsOptional() @Allow() deletedAt?: Date | string | null;
-  
-  @IsOptional() @Allow() names?: any[];
-  @IsOptional() @Allow() addresses?: any[];
-  @IsOptional() @Allow() datesOfBirth?: any[];
-  @IsOptional() @Allow() individualProfile?: any;
-  @IsOptional() @Allow() organizationProfile?: any;
-  @IsOptional() @Allow() vesselProfile?: any;
-  @IsOptional() @Allow() evidenceDocuments?: any[];
-  @IsOptional() @Allow() errors?: string[];
-  @IsOptional() @Allow() sanctionedEntity?: any;
+  @IsOptional()
+  @IsString()
+  alias?: string;
+
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  nationality?: string;
+
+  @IsOptional()
+  @IsInt()
+  groupId?: number;
+
+  @IsOptional()
+  @IsString()
+  listedOn?: string;
+
+  @IsOptional()
+  @IsString()
+  otherInformation?: string;
+
+  @IsOptional()
+  @IsObject()
+  rawData?: Record<string, unknown>;
 }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotImplementedException } from '@nestjs/common';
 import { ExternalSourceRepository } from './external-source.repository';
 import { CreateExternalSourceDto } from './dto/create-external-source.dto';
 import { UpdateExternalSourceDto } from './dto/update-external-source.dto';
@@ -10,22 +10,22 @@ export class ExternalSourceService {
   ) {}
 
   create(createExternalSourceDto: CreateExternalSourceDto) {
-    return 'This action adds a new externalSource';
+    throw new NotImplementedException('External sources are not implemented yet');
   }
 
   findAll() {
-    return `This action returns all externalSource`;
+    throw new NotImplementedException('External sources are not implemented yet');
   }
 
   findOne(id: string) {
-    return `This action returns a #externalSource id`;
+    throw new NotImplementedException('External sources are not implemented yet');
   }
 
   update(id: string, updateExternalSourceDto: UpdateExternalSourceDto) {
-    return `This action updates a #externalSource id`;
+    throw new NotImplementedException('External sources are not implemented yet');
   }
 
   remove(id: string) {
-    return `This action removes a #externalSource id`;
+    throw new NotImplementedException('External sources are not implemented yet');
   }
 }

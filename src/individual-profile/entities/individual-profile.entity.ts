@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   OneToOne,
@@ -18,6 +19,7 @@ export class IndividualProfile {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('UQ_individual_profiles_entityProfileId', { unique: true })
   @Column({ type: 'uuid' })
   entityProfileId: string;
 

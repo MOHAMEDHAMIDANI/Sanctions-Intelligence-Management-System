@@ -8,6 +8,9 @@ import {
 } from 'typeorm';
 import { WebhookFormatEnum } from '../enums/webhook-format.enum';
 import { WebhookDelivery } from './webhook-delivery.entity';
+import { getEncryptionTransformer } from '../../common/encryption/encryption.singleton';
+
+const encryptionTransformer = getEncryptionTransformer();
 
 @Entity('webhook_targets')
 export class WebhookTarget {
@@ -30,7 +33,7 @@ export class WebhookTarget {
   @Column({ type: 'text', nullable: true })
   description?: string | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, transformer: encryptionTransformer })
   secretKey?: string | null;
 
   @Column({ type: 'boolean', default: true })

@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { LoginDto } from './dto/login.dto';
@@ -8,6 +13,8 @@ import { addMinutes } from 'date-fns';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -37,22 +44,30 @@ export class AuthService {
         return { message: 'OTP sent to your email', delivery: 'email' };
       } catch (error) {
         const err = error as Error;
+        if (process.env.NODE_ENV === 'development') {
+          this.logger.debug(
+            `OTP delivery failed for ${user.email}; development OTP is ${otp}`,
+          );
+        }
         return {
           message: 'OTP generated locally because email delivery failed',
           delivery: 'local',
-          otpCode: otp,
           otpExpiresAt: expiry,
           warning: err.message,
         };
       }
     }
 
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.debug(`Local OTP for ${user.email}: ${otp}`);
+    }
+
     return {
       message: 'OTP generated locally',
       delivery: 'local',
-      otpCode: otp,
       otpExpiresAt: expiry,
-      warning: 'Email delivery is disabled. Use the local OTP code instead.',
+      warning:
+        'Email delivery is disabled. OTP output is only available in development server logs.',
     };
   }
 

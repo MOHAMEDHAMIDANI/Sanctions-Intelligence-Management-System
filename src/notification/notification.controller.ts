@@ -1,18 +1,13 @@
 import {
   Controller,
   Get,
-  Post,
-  Body,
   Param,
   Patch,
-  UseGuards,
   Request,
 } from '@nestjs/common';
 import { NotificationService } from './notification.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('notifications')
-@UseGuards(JwtAuthGuard)
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
@@ -22,8 +17,8 @@ export class NotificationController {
   }
 
   @Patch(':id/read')
-  markAsRead(@Param('id') id: string) {
-    return this.notificationService.markAsRead(id);
+  markAsRead(@Param('id') id: string, @Request() req: any) {
+    return this.notificationService.markAsRead(id, req.user.id);
   }
 
   @Patch('read-all')

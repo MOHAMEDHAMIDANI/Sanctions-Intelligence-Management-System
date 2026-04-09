@@ -6,8 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
-import { createHmac } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditActionEnum } from '../common/enums/audit-action.enum';
 import { SanctionedEntityService } from '../sanctioned-entity/sanctioned-entity.service';
 import { CreateWebhookTargetDto } from './dto/create-webhook-target.dto';
 import { UpdateWebhookTargetDto } from './dto/update-webhook-target.dto';
@@ -31,24 +33,34 @@ export class WebhookService {
     private readonly webhookTargetRepository: Repository<WebhookTarget>,
     @InjectRepository(WebhookDelivery)
     private readonly webhookDeliveryRepository: Repository<WebhookDelivery>,
+    private readonly auditLogService: AuditLogService,
     private readonly sanctionedEntityService: SanctionedEntityService,
   ) {}
 
   async getTargets() {
-    return this.webhookTargetRepository.find({
+    const targets = await this.webhookTargetRepository.find({
       order: { createdAt: 'DESC' },
     });
+    return targets.map((target) => this.sanitizeTarget(target));
   }
 
   async createTarget(createDto: CreateWebhookTargetDto) {
+    const plainSecretKey =
+      createDto.secretKey?.trim() || `sk_${randomBytes(18).toString('hex')}`;
     const target = this.webhookTargetRepository.create({
       ...createDto,
+      secretKey: plainSecretKey,
       format: createDto.format || WebhookFormatEnum.JSON,
       isActive: createDto.isActive ?? true,
       mapping: createDto.mapping || {},
       eventTypes: createDto.eventTypes || [WebhookEventTypeEnum.BATCH_VALIDATED],
     });
-    return this.webhookTargetRepository.save(target);
+    const savedTarget = await this.webhookTargetRepository.save(target);
+
+    return {
+      ...this.sanitizeTarget(savedTarget),
+      plainSecretKey,
+    };
   }
 
   async updateTarget(id: string, updateDto: UpdateWebhookTargetDto) {
@@ -59,6 +71,10 @@ export class WebhookService {
 
     Object.assign(target, updateDto);
 
+    if (updateDto.secretKey !== undefined) {
+      target.secretKey = updateDto.secretKey?.trim() || target.secretKey;
+    }
+
     if (updateDto.mapping !== undefined) {
       target.mapping = updateDto.mapping || {};
     }
@@ -67,7 +83,8 @@ export class WebhookService {
       target.eventTypes = updateDto.eventTypes;
     }
 
-    return this.webhookTargetRepository.save(target);
+    const savedTarget = await this.webhookTargetRepository.save(target);
+    return this.sanitizeTarget(savedTarget);
   }
 
   async deleteTarget(id: string) {
@@ -79,18 +96,27 @@ export class WebhookService {
     return { deleted: true };
   }
 
-  async getDeliveries(targetId?: string) {
-    const where = targetId ? { targetId } : {};
+  async getDeliveries(targetId?: string, batchId?: string) {
+    const where: Record<string, string> = {};
+    if (targetId) {
+      where.targetId = targetId;
+    }
+    if (batchId) {
+      where.batchId = batchId;
+    }
+
     const deliveries = await this.webhookDeliveryRepository.find({
       where,
       relations: ['target'],
-      order: { createdAt: 'DESC' },
+      order: { attemptedAt: 'DESC' },
     });
 
     return deliveries.map((delivery) => ({
       ...delivery,
       target:
-        delivery.target ||
+        (delivery.target
+          ? this.sanitizeTarget(delivery.target)
+          : null) ||
         (delivery.targetName
           ? {
               id: delivery.targetId,
@@ -120,6 +146,16 @@ export class WebhookService {
   ) {
     const batch = await this.sanctionedEntityService.findOne(batchId);
     const entries = await this.sanctionedEntityService.getEntries(batchId);
+
+    await this.auditLogService.log({
+      action: AuditActionEnum.DISTRIBUTION_STARTED,
+      entityType: 'SanctionedEntity',
+      entityId: batchId,
+      metadata: {
+        eventType,
+        targetId: targetId || null,
+      },
+    });
 
     const targets = targetId
       ? await this.webhookTargetRepository.find({ where: { id: targetId } })
@@ -154,7 +190,81 @@ export class WebhookService {
       );
     }
 
+    const hasFailures = deliveries.some(
+      (delivery) => delivery.status === WebhookDeliveryStatusEnum.FAILED,
+    );
+
+    await this.auditLogService.log({
+      action: hasFailures
+        ? AuditActionEnum.DISTRIBUTION_FAILED
+        : AuditActionEnum.DISTRIBUTION_COMPLETED,
+      entityType: 'SanctionedEntity',
+      entityId: batchId,
+      metadata: {
+        eventType,
+        targetId: targetId || null,
+        deliveryCount: deliveries.length,
+        failedCount: deliveries.filter(
+          (delivery) => delivery.status === WebhookDeliveryStatusEnum.FAILED,
+        ).length,
+      },
+    });
+
     return deliveries;
+  }
+
+  async retryFailedDeliveries(batchId: string, targetId?: string) {
+    const failedDeliveries = await this.webhookDeliveryRepository.find({
+      where: {
+        batchId,
+        status: WebhookDeliveryStatusEnum.FAILED,
+        ...(targetId ? { targetId } : {}),
+      },
+      relations: ['target'],
+      order: { attemptedAt: 'DESC' },
+    });
+
+    if (!failedDeliveries.length) {
+      throw new NotFoundException('No failed deliveries found for retry');
+    }
+
+    const uniqueTargets = new Map<string, WebhookDelivery>();
+    for (const delivery of failedDeliveries) {
+      const deliveryKey = delivery.targetId || `${delivery.targetName}:${delivery.eventType}`;
+      if (!uniqueTargets.has(deliveryKey)) {
+        uniqueTargets.set(deliveryKey, delivery);
+      }
+    }
+
+    const batch = await this.sanctionedEntityService.findOne(batchId);
+    const entries = await this.sanctionedEntityService.getEntries(batchId);
+    const retriedDeliveries: WebhookDelivery[] = [];
+
+    for (const failedDelivery of uniqueTargets.values()) {
+      const target = failedDelivery.targetId
+        ? await this.webhookTargetRepository.findOne({
+            where: { id: failedDelivery.targetId },
+          })
+        : null;
+
+      if (!target) {
+        this.logger.warn(
+          `Skipping retry for batch ${batchId} because target ${failedDelivery.targetId} no longer exists`,
+        );
+        continue;
+      }
+
+      retriedDeliveries.push(
+        await this.sendDelivery({
+          batch,
+          entries,
+          eventType: failedDelivery.eventType as WebhookEventTypeEnum,
+          target,
+        }),
+      );
+    }
+
+    return retriedDeliveries;
   }
 
   private async sendDelivery(params: {
@@ -166,15 +276,22 @@ export class WebhookService {
     const { batch, entries, eventType, target } = params;
     const requestPayload = this.buildPayload(batch, entries, eventType, target);
     const request = this.prepareRequestBody(requestPayload, target);
+    const previousAttemptCount = await this.webhookDeliveryRepository.count({
+      where: {
+        batchId: batch.id,
+        targetId: target.id,
+      },
+    });
 
     const delivery = this.webhookDeliveryRepository.create({
+      batchId: batch.id,
       targetId: target.id,
       targetName: target.name,
       targetFormat: target.format,
       eventType,
       payload: requestPayload.inspectorPayload,
       status: WebhookDeliveryStatusEnum.PENDING,
-      attemptCount: 1,
+      attemptCount: previousAttemptCount + 1,
     });
     const savedDelivery = await this.webhookDeliveryRepository.save(delivery);
 
@@ -509,5 +626,20 @@ export class WebhookService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  private sanitizeTarget(target: WebhookTarget) {
+    return {
+      ...target,
+      secretKey: this.maskSecretKey(target.secretKey),
+    };
+  }
+
+  private maskSecretKey(secretKey?: string | null) {
+    if (!secretKey) {
+      return null;
+    }
+
+    return `sk_****${secretKey.slice(-4)}`;
   }
 }

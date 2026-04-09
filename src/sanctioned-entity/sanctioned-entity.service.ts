@@ -44,14 +44,14 @@ export class SanctionedEntityService {
   //  CRUD — SanctionedEntity is the BATCH / blacklist
   // ─────────────────────────────────────────────────────
 
-  async create(dto: CreateSanctionedEntityDto) {
+  async create(dto: CreateSanctionedEntityDto, createdById?: string) {
     const entity = this.sanctionedEntityRepository.create({
       source: dto.source,
       blacklistId: dto.blacklistId || null,
       status: dto.status ?? BlacklistStatusEnum.READY,
       date: dto.date || new Date().toISOString().split('T')[0],
       entriesCount: 0,
-      createdById: dto.createdById || null,
+      createdById: createdById || null,
     });
     const saved = await this.sanctionedEntityRepository.save(entity);
 
@@ -83,57 +83,96 @@ export class SanctionedEntityService {
 
   async update(id: string, dto: Record<string, any>) {
     const entity = await this.findOne(id);
+    if (
+      entity.status === BlacklistStatusEnum.VALID &&
+      (dto.manualData !== undefined ||
+        dto.source !== undefined ||
+        dto.blacklistId !== undefined)
+    ) {
+      throw new BadRequestException(
+        'Approved batches are locked and cannot be edited.',
+      );
+    }
     const previousStatus = entity.status;
     const nextStatus = dto.status;
     if (nextStatus && nextStatus !== entity.status) {
       this.assertValidStatusTransition(entity.status, nextStatus);
     }
 
-    // Update batch metadata
-    if (dto.source) entity.source = dto.source;
-    if (dto.blacklistId !== undefined) entity.blacklistId = dto.blacklistId;
-    if (dto.status) entity.status = dto.status;
-
-    // Handle manualData sync if provided by the frontend
-    if (dto.manualData && Array.isArray(dto.manualData)) {
-      const existingEntries = await this.dataSource.getRepository(EntityProfile).find({
-        where: { sanctionedEntityId: id },
-        select: ['id'],
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const managedEntity = await manager.findOne(SanctionedEntity, {
+        where: { id },
       });
-
-      const manualIdSet = new Set(dto.manualData.map((e: any) => String(e.id)));
-      const existingIds = existingEntries.map((e) => e.id);
-
-      // 1. Delete removed
-      const toDelete = existingIds.filter(id => !manualIdSet.has(id));
-      console.log(`[Update Batch] Calculated toDelete: ${toDelete.length} entries out of ${existingIds.length} existing.`);
-      for (const delId of toDelete) {
-        await this.deleteEntry(delId);
+      if (!managedEntity) {
+        throw new NotFoundException('Sanctioned entity not found');
       }
 
-      // 2. Add or Update
-      let addCount = 0;
-      let updateCount = 0;
-      let skippedCount = 0;
+      if (dto.source) managedEntity.source = dto.source;
+      if (dto.blacklistId !== undefined) {
+        managedEntity.blacklistId = dto.blacklistId;
+      }
+      if (dto.status) managedEntity.status = dto.status;
 
-      for (const manualEntry of dto.manualData) {
-        const isNew = String(manualEntry.id).length < 20; // frontend uses Date.now() for new
-        if (isNew) {
-          addCount++;
-          await this.addEntry(id, manualEntry);
-        } else if (manualEntry._isDirty === true) {
-          updateCount++;
-          await this.updateEntry(manualEntry.id, manualEntry);
-        } else {
+      if (dto.manualData && Array.isArray(dto.manualData)) {
+        const existingEntries = await manager.find(EntityProfile, {
+          where: { sanctionedEntityId: id },
+          select: ['id'],
+        });
+
+        const manualIdSet = new Set(
+          dto.manualData
+            .map((entry: any) => entry?.id)
+            .filter(Boolean)
+            .map((entryId: unknown) => String(entryId)),
+        );
+        const existingIds = existingEntries.map((entry) => entry.id);
+        const toDelete = existingIds.filter((entryId) => !manualIdSet.has(entryId));
+
+        this.logger.log(
+          `Batch ${id} sync will delete ${toDelete.length} removed entries out of ${existingIds.length}`,
+        );
+
+        for (const entryId of toDelete) {
+          await this.deleteEntryWithinTransaction(manager, entryId, false);
+        }
+
+        let addCount = 0;
+        let updateCount = 0;
+        let skippedCount = 0;
+
+        for (const manualEntry of dto.manualData) {
+          const isExistingEntry =
+            typeof manualEntry?.id === 'string' &&
+            existingIds.includes(manualEntry.id);
+
+          if (!isExistingEntry) {
+            addCount++;
+            await this.createEntryProfile(manager, id, manualEntry);
+            continue;
+          }
+
+          if (manualEntry._isDirty === true) {
+            updateCount++;
+            await this.updateEntryWithinTransaction(
+              manager,
+              manualEntry.id,
+              manualEntry,
+            );
+            continue;
+          }
+
           skippedCount++;
         }
-      }
-      
-      console.log(`[Update Batch] Finished. Added: ${addCount}, Updated: ${updateCount}, Skipped: ${skippedCount}`);
-      entity.entriesCount = dto.manualData.length;
-    }
 
-    const saved = await this.sanctionedEntityRepository.save(entity);
+        this.logger.log(
+          `Batch ${id} sync finished. Added=${addCount}, Updated=${updateCount}, Skipped=${skippedCount}`,
+        );
+        managedEntity.entriesCount = dto.manualData.length;
+      }
+
+      return manager.save(managedEntity);
+    });
+
     if (nextStatus && nextStatus !== previousStatus) {
       await this.auditLogService.log({
         action: AuditActionEnum.SANCTIONED_ENTITY_STATUS_CHANGED,
@@ -234,53 +273,33 @@ export class SanctionedEntityService {
     const batch = await this.findOne(sanctionedEntityId);
 
     const result = await this.dataSource.transaction(async (manager) => {
-      return this.createEntryProfile(manager, sanctionedEntityId, entryData);
-    });
+      const createdProfile = await this.createEntryProfile(
+        manager,
+        sanctionedEntityId,
+        entryData,
+      );
 
-    // Update entry count
-    batch.entriesCount = (batch.entriesCount || 0) + 1;
-    await this.sanctionedEntityRepository.save(batch);
+      batch.entriesCount = (batch.entriesCount || 0) + 1;
+      await manager.save(SanctionedEntity, batch);
+
+      return createdProfile;
+    });
 
     return result;
   }
 
   /** Update an existing entry */
   async updateEntry(entryId: string, entryData: any) {
-    const profileRepo = this.dataSource.getRepository(EntityProfile);
-    const profile = await profileRepo.findOne({ where: { id: entryId } });
-    if (!profile) {
-      throw new NotFoundException('Entry not found');
-    }
-    Object.assign(profile, {
-      fullName: entryData.fullName || profile.fullName,
-      nationality: entryData.nationality || profile.nationality,
-      dateOfBirth: entryData.dob || profile.dateOfBirth,
-      groupId: entryData.groupId || profile.groupId,
-      rawData: { ...(profile.rawData || {}), ...entryData },
-    });
-    return profileRepo.save(profile);
+    return this.dataSource.transaction(async (manager) =>
+      this.updateEntryWithinTransaction(manager, entryId, entryData),
+    );
   }
 
   /** Delete an existing entry */
   async deleteEntry(entryId: string) {
-    const profileRepo = this.dataSource.getRepository(EntityProfile);
-    const profile = await profileRepo.findOne({
-      where: { id: entryId },
-      relations: ['sanctionedEntity'],
-    });
-    if (!profile) {
-      throw new NotFoundException('Entry not found');
-    }
-
-    const batchId = profile.sanctionedEntityId;
-    await profileRepo.softDelete(entryId);
-
-    // Update entry count
-    const batch = await this.findOne(batchId);
-    batch.entriesCount = Math.max(0, (batch.entriesCount || 1) - 1);
-    await this.sanctionedEntityRepository.save(batch);
-
-    return { deleted: true };
+    return this.dataSource.transaction(async (manager) =>
+      this.deleteEntryWithinTransaction(manager, entryId, true),
+    );
   }
 
   // ─────────────────────────────────────────────────────
@@ -837,12 +856,86 @@ export class SanctionedEntityService {
     const profileRepo = this.dataSource.getRepository(EntityProfile);
     const totalEntries = await profileRepo.count();
 
+    const recentActivity = await this.auditLogService.findAll();
+    const activeUsersResult = await this.dataSource
+      .getRepository(SanctionedEntity)
+      .createQueryBuilder('batch')
+      .select('COUNT(DISTINCT batch.createdById)', 'count')
+      .where('batch.createdById IS NOT NULL')
+      .getRawOne<{ count?: string }>();
+
     return {
       totalBlacklists,
       totalEntries,
-      activeUsers: 3,
-      recentActivity: 15,
+      activeUsers: Number(activeUsersResult?.count || 0),
+      recentActivity: recentActivity.slice(0, 10),
     };
+  }
+
+  private async updateEntryWithinTransaction(
+    manager: EntityManager,
+    entryId: string,
+    entryData: any,
+  ) {
+    const profile = await manager.findOne(EntityProfile, {
+      where: { id: entryId },
+    });
+    if (!profile) {
+      throw new NotFoundException('Entry not found');
+    }
+
+    const normalizedEntry = this.normalizeEntryData(entryData);
+
+    Object.assign(profile, {
+      entityType: normalizedEntry.entityType,
+      fullName: normalizedEntry.fullName,
+      alias: normalizedEntry.alias,
+      dateOfBirth: normalizedEntry.dateOfBirth,
+      nationality: normalizedEntry.nationality,
+      groupId: normalizedEntry.groupId,
+      listedOn: normalizedEntry.listedOn,
+      otherInformation: normalizedEntry.otherInformation,
+      rawData: normalizedEntry.rawData,
+    });
+
+    const savedProfile = await manager.save(profile);
+
+    await manager.delete(EntityName, { entityProfileId: entryId });
+    await manager.delete(EntityAddress, { entityProfileId: entryId });
+    await manager.delete(EntityDateOfBirth, { entityProfileId: entryId });
+    await manager.delete(IndividualProfile, { entityProfileId: entryId });
+
+    await this.persistEntryRelations(manager, savedProfile.id, normalizedEntry);
+
+    return savedProfile;
+  }
+
+  private async deleteEntryWithinTransaction(
+    manager: EntityManager,
+    entryId: string,
+    adjustCount: boolean,
+  ) {
+    const profile = await manager.findOne(EntityProfile, {
+      where: { id: entryId },
+    });
+    if (!profile) {
+      throw new NotFoundException('Entry not found');
+    }
+
+    await manager.softDelete(EntityProfile, entryId);
+
+    if (adjustCount) {
+      const batch = await manager.findOne(SanctionedEntity, {
+        where: { id: profile.sanctionedEntityId },
+      });
+      if (!batch) {
+        throw new NotFoundException('Sanctioned entity not found');
+      }
+      batch.entriesCount = Math.max(0, (batch.entriesCount || 1) - 1);
+      await manager.save(batch);
+    }
+
+    return { deleted: true };
   }
 
   // ─────────────────────────────────────────────────────
@@ -858,86 +951,54 @@ export class SanctionedEntityService {
     sanctionedEntityId: string,
     data: any,
   ): Promise<EntityProfile> {
-    // Build fullName from name parts if not directly provided
-    const fullName = data.fullName
-      || [data.name1, data.name2, data.name3, data.name4, data.name5, data.name6]
-          .filter((n: string) => n && String(n).trim())
-          .join(' ')
-      || 'Unknown';
-    const primaryDisplayName = data.name1 || fullName;
-
-    // Build a sanitized rawData snapshot preserving every original field
-    const rawData: Record<string, any> = {
-      name1: primaryDisplayName || '', name2: data.name2 || '', name3: data.name3 || '',
-      name4: data.name4 || '', name5: data.name5 || '', name6: data.name6 || '',
-      title: data.title || '',
-      nameNonLatin: data.nameNonLatin || '', nonLatinType: data.nonLatinType || '', nonLatinLang: data.nonLatinLang || '',
-      dob: data.dob ? String(data.dob) : '',
-      townOfBirth: data.townOfBirth || data.placeOfBirth || '',
-      countryOfBirth: data.countryOfBirth || '',
-      nationality: data.nationality || data.country || '',
-      passportNum: data.passportNum || data.passportNumber || '',
-      passportDetails: data.passportDetails || '',
-      nationalId: data.nationalId || data.nationalIdNumber || '',
-      nationalIdDetails: data.nationalIdDetails || '',
-      addr1: data.addr1 || (data.addresses?.[0]) || '',
-      addr2: data.addr2 || (data.addresses?.[1]) || '',
-      addr3: data.addr3 || (data.addresses?.[2]) || '',
-      addr4: data.addr4 || '', addr5: data.addr5 || '', addr6: data.addr6 || '',
-      zipCode: data.zipCode || '',
-      country: data.country || '',
-      otherInfo: data.otherInfo || data.otherInformation || '',
-      groupType: data.groupType || '',
-      aliasType: data.aliasType || data.alias || '',
-      aliasQuality: data.aliasQuality || '',
-      regime: data.regime || '',
-      listedOn: data.listedOn || '',
-      ukSanctionsListDate: data.ukSanctionsListDate || '',
-      lastUpdated: data.lastUpdated || '',
-      groupId: data.groupId || '',
-      fullName,
-    };
+    const normalizedEntry = this.normalizeEntryData(data);
 
     // 1. EntityProfile (the "entry" / person row)
     const profile = manager.create(EntityProfile, {
       sanctionedEntityId,
-      entityType: this.mapGroupType(data.groupType),
-      fullName: String(fullName),
-      alias: data.alias || data.aliasType || null,
-      dateOfBirth: data.dob ? String(data.dob) : null,
-      nationality: data.nationality || data.country || null,
-      groupId: data.groupId ? parseInt(String(data.groupId), 10) || null : null,
-      listedOn: data.listedOn || data.ukSanctionsListDate || null,
-      otherInformation: data.otherInfo || data.otherInformation || null,
-      rawData,
+      entityType: normalizedEntry.entityType,
+      fullName: normalizedEntry.fullName,
+      alias: normalizedEntry.alias,
+      dateOfBirth: normalizedEntry.dateOfBirth,
+      nationality: normalizedEntry.nationality,
+      groupId: normalizedEntry.groupId,
+      listedOn: normalizedEntry.listedOn,
+      otherInformation: normalizedEntry.otherInformation,
+      rawData: normalizedEntry.rawData,
     });
     const savedProfile = await manager.save(profile);
 
-    // 2. Primary Name
+    await this.persistEntryRelations(manager, savedProfile.id, normalizedEntry);
+
+    return savedProfile;
+  }
+
+  private async persistEntryRelations(
+    manager: EntityManager,
+    entityProfileId: string,
+    data: ReturnType<typeof SanctionedEntityService.prototype.normalizeEntryData>,
+  ) {
     const primaryName = manager.create(EntityName, {
-      entityProfileId: savedProfile.id,
-      name: String(fullName),
+      entityProfileId,
+      name: String(data.fullName),
       nameType: NameTypeEnum.PRIMARY_NAME,
       isPrimary: true,
     });
     await manager.save(primaryName);
 
-    // 3. Alias name
-    const aliasValue = data.alias || data.aliasType;
-    if (aliasValue) {
+    if (data.alias) {
       const aliasName = manager.create(EntityName, {
-        entityProfileId: savedProfile.id,
-        name: String(aliasValue),
+        entityProfileId,
+        name: String(data.alias),
         nameType: NameTypeEnum.AKA,
         isPrimary: false,
       });
       await manager.save(aliasName);
     }
 
-    // 4. Non-Latin name
     if (data.nameNonLatin) {
       const nlName = manager.create(EntityName, {
-        entityProfileId: savedProfile.id,
+        entityProfileId,
         name: String(data.nameNonLatin),
         nameType: NameTypeEnum.PRIMARY_NAME_VARIATION,
         isPrimary: false,
@@ -945,55 +1006,138 @@ export class SanctionedEntityService {
       await manager.save(nlName);
     }
 
-    // 5. Date of Birth
-    const dob = data.dob || data.dateOfBirth;
-    if (dob) {
+    if (data.dateOfBirth) {
       const dobEntry = manager.create(EntityDateOfBirth, {
-        entityProfileId: savedProfile.id,
-        dateOfBirth: String(dob),
+        entityProfileId,
+        dateOfBirth: String(data.dateOfBirth),
       });
       await manager.save(dobEntry);
     }
 
-    // 6. Individual Profile (demographics)
-    const nat = data.nationality || data.country;
-    const pob = data.placeOfBirth || data.townOfBirth || data.countryOfBirth;
-    const passport = data.passportNum || data.passportNumber;
-    const natId = data.nationalId || data.nationalIdNumber;
-    if (nat || pob || passport || natId) {
+    if (
+      data.profileNationality ||
+      data.placeOfBirth ||
+      data.passportNumber ||
+      data.nationalIdNumber
+    ) {
       const indProfile = manager.create(IndividualProfile, {
-        entityProfileId: savedProfile.id,
-        nationality: nat ? String(nat) : null,
-        placeOfBirth: pob ? String(pob) : null,
-        passportNumber: passport ? String(passport) : null,
-        passportDetails: data.passportDetails ? String(data.passportDetails) : null,
-        nationalIdNumber: natId ? String(natId) : null,
-        nationalIdDetails: data.nationalIdDetails ? String(data.nationalIdDetails) : null,
+        entityProfileId,
+        nationality: data.profileNationality,
+        placeOfBirth: data.placeOfBirth,
+        passportNumber: data.passportNumber,
+        passportDetails: data.passportDetails,
+        nationalIdNumber: data.nationalIdNumber,
+        nationalIdDetails: data.nationalIdDetails,
       });
       await manager.save(indProfile);
     }
 
-    // 7. Address
-    const addrFields = [data.addr1, data.addr2, data.addr3, data.addr4, data.addr5, data.addr6];
-    const validAddrs = (data.addresses || addrFields).filter(
-      (a: string) => a && String(a).trim().length > 0,
-    );
-    if (validAddrs.length > 0) {
+    if (data.addressLines.length > 0) {
       const address = manager.create(EntityAddress, {
-        entityProfileId: savedProfile.id,
+        entityProfileId,
         addressType: AddressTypeEnum.CORRESPONDENCE,
-        addressLine1: String(validAddrs[0]),
-        addressLine2: validAddrs[1] ? String(validAddrs[1]) : null,
-        addressLine3: validAddrs[2] ? String(validAddrs[2]) : null,
-        city: validAddrs[3] ? String(validAddrs[3]) : null,
-        state: validAddrs[4] ? String(validAddrs[4]) : null,
-        postalCode: data.zipCode ? String(data.zipCode) : null,
-        country: (data.country || nat) ? String(data.country || nat) : null,
+        addressLine1: data.addressLines[0],
+        addressLine2: data.addressLines[1],
+        addressLine3: data.addressLines[2],
+        city: data.addressLines[3],
+        state: data.addressLines[4],
+        postalCode: data.zipCode,
+        country: data.country || data.profileNationality,
       });
       await manager.save(address);
     }
+  }
 
-    return savedProfile;
+  private normalizeEntryData(data: any) {
+    const fullName =
+      data.fullName ||
+      [data.name1, data.name2, data.name3, data.name4, data.name5, data.name6]
+        .filter((name: string) => name && String(name).trim())
+        .join(' ') ||
+      'Unknown';
+    const primaryDisplayName = data.name1 || fullName;
+    const alias = data.alias || data.aliasType || null;
+    const dateOfBirth = data.dob
+      ? String(data.dob)
+      : data.dateOfBirth
+        ? String(data.dateOfBirth)
+        : null;
+    const profileNationality = data.nationality || data.country || null;
+    const placeOfBirth =
+      data.placeOfBirth || data.townOfBirth || data.countryOfBirth || null;
+    const passportNumber = data.passportNum || data.passportNumber || null;
+    const nationalIdNumber = data.nationalId || data.nationalIdNumber || null;
+    const addressLines = (data.addresses || [
+      data.addr1,
+      data.addr2,
+      data.addr3,
+      data.addr4,
+      data.addr5,
+      data.addr6,
+    ])
+      .filter((line: string) => line && String(line).trim().length > 0)
+      .map((line: string) => String(line));
+
+    return {
+      entityType: this.mapGroupType(data.groupType),
+      fullName: String(fullName),
+      alias: alias ? String(alias) : null,
+      dateOfBirth,
+      nationality: profileNationality ? String(profileNationality) : null,
+      groupId: data.groupId ? parseInt(String(data.groupId), 10) || null : null,
+      listedOn: data.listedOn || data.ukSanctionsListDate || null,
+      otherInformation: data.otherInfo || data.otherInformation || null,
+      nameNonLatin: data.nameNonLatin ? String(data.nameNonLatin) : null,
+      profileNationality: profileNationality ? String(profileNationality) : null,
+      placeOfBirth: placeOfBirth ? String(placeOfBirth) : null,
+      passportNumber: passportNumber ? String(passportNumber) : null,
+      passportDetails: data.passportDetails ? String(data.passportDetails) : null,
+      nationalIdNumber: nationalIdNumber ? String(nationalIdNumber) : null,
+      nationalIdDetails: data.nationalIdDetails
+        ? String(data.nationalIdDetails)
+        : null,
+      addressLines,
+      zipCode: data.zipCode ? String(data.zipCode) : null,
+      country: data.country ? String(data.country) : null,
+      rawData: {
+        name1: primaryDisplayName || '',
+        name2: data.name2 || '',
+        name3: data.name3 || '',
+        name4: data.name4 || '',
+        name5: data.name5 || '',
+        name6: data.name6 || '',
+        title: data.title || '',
+        nameNonLatin: data.nameNonLatin || '',
+        nonLatinType: data.nonLatinType || '',
+        nonLatinLang: data.nonLatinLang || '',
+        dob: data.dob ? String(data.dob) : '',
+        townOfBirth: data.townOfBirth || data.placeOfBirth || '',
+        countryOfBirth: data.countryOfBirth || '',
+        nationality: data.nationality || data.country || '',
+        passportNum: data.passportNum || data.passportNumber || '',
+        passportDetails: data.passportDetails || '',
+        nationalId: data.nationalId || data.nationalIdNumber || '',
+        nationalIdDetails: data.nationalIdDetails || '',
+        addr1: data.addr1 || data.addresses?.[0] || '',
+        addr2: data.addr2 || data.addresses?.[1] || '',
+        addr3: data.addr3 || data.addresses?.[2] || '',
+        addr4: data.addr4 || '',
+        addr5: data.addr5 || '',
+        addr6: data.addr6 || '',
+        zipCode: data.zipCode || '',
+        country: data.country || '',
+        otherInfo: data.otherInfo || data.otherInformation || '',
+        groupType: data.groupType || '',
+        aliasType: data.aliasType || data.alias || '',
+        aliasQuality: data.aliasQuality || '',
+        regime: data.regime || '',
+        listedOn: data.listedOn || '',
+        ukSanctionsListDate: data.ukSanctionsListDate || '',
+        lastUpdated: data.lastUpdated || '',
+        groupId: data.groupId || '',
+        fullName,
+      } as Record<string, any>,
+    };
   }
 
   /** Map frontend groupType string to EntityTypeEnum */

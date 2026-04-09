@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
@@ -33,6 +34,7 @@ export class EntityProfile {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index('IDX_entity_profiles_sanctionedEntityId')
   @Column({ type: 'uuid' })
   sanctionedEntityId: string;
 
