@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { UserRepository } from './user.repository';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -15,10 +16,60 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+  private otpLockoutColumnsAvailable: boolean | null = null;
+  private readonly otpLockoutFallbackState = new Map<
+    string,
+    { attemptCount: number; lockedUntil: Date | null }
+  >();
+
   constructor(
     private readonly userRepository: UserRepository,
     private readonly mailService: MailService,
   ) {}
+
+  private async hasPersistentOtpLockoutColumns() {
+    if (this.otpLockoutColumnsAvailable !== null) {
+      return this.otpLockoutColumnsAvailable;
+    }
+
+    const tableName = this.userRepository.metadata.tableName;
+    const attemptColumn = this.userRepository.metadata.findColumnWithPropertyName(
+      'otpAttemptCount',
+    )?.databaseName;
+    const lockedUntilColumn = this.userRepository.metadata.findColumnWithPropertyName(
+      'otpLockedUntil',
+    )?.databaseName;
+
+    if (!attemptColumn || !lockedUntilColumn) {
+      this.otpLockoutColumnsAvailable = false;
+      return this.otpLockoutColumnsAvailable;
+    }
+
+    const rows: Array<{ column_name: string }> = await this.userRepository.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = $1
+          AND column_name = ANY($2::text[])
+      `,
+      [tableName, [attemptColumn, lockedUntilColumn]],
+    );
+
+    const availableColumns = new Set(rows.map((row) => row.column_name));
+    this.otpLockoutColumnsAvailable =
+      availableColumns.has(attemptColumn) &&
+      availableColumns.has(lockedUntilColumn);
+
+    if (!this.otpLockoutColumnsAvailable) {
+      this.logger.warn(
+        'OTP lockout columns are missing from the users table. Apply the latest database migration to enable persistent OTP lockout.',
+      );
+    }
+
+    return this.otpLockoutColumnsAvailable;
+  }
 
   async create(createUserDto: CreateUserDto) {
     const existing = await this.userRepository.findOneBy({ email: createUserDto.email });
@@ -90,30 +141,63 @@ export class UserService {
 
   async saveOtp(id: string, otp: string, expiry: Date) {
     const otpCode = await bcrypt.hash(otp, 10);
+    const hasPersistentLockoutColumns =
+      await this.hasPersistentOtpLockoutColumns();
 
+    if (hasPersistentLockoutColumns) {
+      await this.userRepository.update(id, {
+        otpCode,
+        otpExpiry: expiry,
+        otpAttemptCount: 0,
+        otpLockedUntil: null,
+      });
+      return;
+    }
+
+    this.otpLockoutFallbackState.delete(id);
     await this.userRepository.update(id, {
       otpCode,
       otpExpiry: expiry,
-      otpAttemptCount: 0,
-      otpLockedUntil: null,
     });
   }
 
   async validateOtp(id: string, otp: string) {
+    const hasPersistentLockoutColumns =
+      await this.hasPersistentOtpLockoutColumns();
+
     const user = await this.userRepository.findOne({
       where: { id: id as any },
-      select: ['id', 'otpCode', 'otpExpiry', 'otpAttemptCount', 'otpLockedUntil'],
+      select: hasPersistentLockoutColumns
+        ? ['id', 'otpCode', 'otpExpiry', 'otpAttemptCount', 'otpLockedUntil']
+        : ['id', 'otpCode', 'otpExpiry'],
     });
 
     if (!user) {
       return false;
     }
 
-    if (user.otpLockedUntil && isAfter(user.otpLockedUntil, new Date())) {
+    if (
+      hasPersistentLockoutColumns &&
+      user.otpLockedUntil &&
+      isAfter(user.otpLockedUntil, new Date())
+    ) {
       throw new HttpException(
         'Too many invalid OTP attempts. Try again after the lockout expires.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
+    }
+
+    if (!hasPersistentLockoutColumns) {
+      const fallbackLockState = this.otpLockoutFallbackState.get(id);
+      if (
+        fallbackLockState?.lockedUntil &&
+        isAfter(fallbackLockState.lockedUntil, new Date())
+      ) {
+        throw new HttpException(
+          'Too many invalid OTP attempts. Try again after the lockout expires.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
     }
 
     if (!user.otpCode || !user.otpExpiry || isAfter(new Date(), user.otpExpiry)) {
@@ -123,21 +207,43 @@ export class UserService {
     const isValid = await bcrypt.compare(otp, user.otpCode);
 
     if (!isValid) {
-      const nextAttempts = (user.otpAttemptCount || 0) + 1;
+      if (hasPersistentLockoutColumns) {
+        const nextAttempts = (user.otpAttemptCount || 0) + 1;
+        const shouldLock = nextAttempts >= 5;
+        await this.userRepository.update(id, {
+          otpAttemptCount: shouldLock ? 0 : nextAttempts,
+          otpLockedUntil: shouldLock ? new Date(Date.now() + 15 * 60 * 1000) : null,
+        });
+        return false;
+      }
+
+      const fallbackState = this.otpLockoutFallbackState.get(id) || {
+        attemptCount: 0,
+        lockedUntil: null,
+      };
+      const nextAttempts = fallbackState.attemptCount + 1;
       const shouldLock = nextAttempts >= 5;
-      await this.userRepository.update(id, {
-        otpAttemptCount: shouldLock ? 0 : nextAttempts,
-        otpLockedUntil: shouldLock ? new Date(Date.now() + 15 * 60 * 1000) : null,
+      this.otpLockoutFallbackState.set(id, {
+        attemptCount: shouldLock ? 0 : nextAttempts,
+        lockedUntil: shouldLock ? new Date(Date.now() + 15 * 60 * 1000) : null,
       });
       return false;
     }
 
-    await this.userRepository.update(id, {
-      otpCode: null,
-      otpExpiry: null,
-      otpAttemptCount: 0,
-      otpLockedUntil: null,
-    });
+    if (hasPersistentLockoutColumns) {
+      await this.userRepository.update(id, {
+        otpCode: null,
+        otpExpiry: null,
+        otpAttemptCount: 0,
+        otpLockedUntil: null,
+      });
+    } else {
+      this.otpLockoutFallbackState.delete(id);
+      await this.userRepository.update(id, {
+        otpCode: null,
+        otpExpiry: null,
+      });
+    }
 
     return true;
   }
