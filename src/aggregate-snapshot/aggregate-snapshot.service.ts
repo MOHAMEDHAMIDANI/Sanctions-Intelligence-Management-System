@@ -13,8 +13,9 @@ export class AggregateSnapshotService {
   ) {}
 
   async create(createAggregateSnapshotDto: CreateAggregateSnapshotDto) {
-    const snapshot =
-      this.aggregateSnapshotRepository.create(createAggregateSnapshotDto);
+    const snapshot = this.aggregateSnapshotRepository.create(
+      createAggregateSnapshotDto,
+    );
     const saved = await this.aggregateSnapshotRepository.save(snapshot);
     await this.auditLogService.log({
       action: AuditActionEnum.ENTITY_CREATED,

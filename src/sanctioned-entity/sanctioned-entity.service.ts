@@ -126,7 +126,9 @@ export class SanctionedEntityService {
             .map((entryId: unknown) => String(entryId)),
         );
         const existingIds = existingEntries.map((entry) => entry.id);
-        const toDelete = existingIds.filter((entryId) => !manualIdSet.has(entryId));
+        const toDelete = existingIds.filter(
+          (entryId) => !manualIdSet.has(entryId),
+        );
 
         this.logger.log(
           `Batch ${id} sync will delete ${toDelete.length} removed entries out of ${existingIds.length}`,
@@ -351,14 +353,22 @@ export class SanctionedEntityService {
       );
     }
 
-    return this.createBatchFromRows(normalizedRows, metadata, file.originalname);
+    return this.createBatchFromRows(
+      normalizedRows,
+      metadata,
+      file.originalname,
+    );
   }
 
   async processExcelUpload(file: UploadedFile, metadata: any) {
     return this.processUploadedFile(file, metadata);
   }
 
-  private async createBatchFromRows(rows: any[], metadata: any, originalName?: string) {
+  private async createBatchFromRows(
+    rows: any[],
+    metadata: any,
+    originalName?: string,
+  ) {
     const normalizedStatus = this.normalizeStatus(
       metadata.status || BlacklistStatusEnum.READY,
     );
@@ -380,7 +390,10 @@ export class SanctionedEntityService {
         }
       } catch (error) {
         const err = error as Error;
-        this.logger.error(`Error processing uploaded file: ${err.message}`, err.stack);
+        this.logger.error(
+          `Error processing uploaded file: ${err.message}`,
+          err.stack,
+        );
         throw new BadRequestException(`Upload failed: ${err.message}`);
       }
 
@@ -405,7 +418,11 @@ export class SanctionedEntityService {
     if (lower.endsWith('.xml')) {
       return 'xml';
     }
-    if (lower.endsWith('.hmt') || lower.endsWith('.html') || lower.endsWith('.htm')) {
+    if (
+      lower.endsWith('.hmt') ||
+      lower.endsWith('.html') ||
+      lower.endsWith('.htm')
+    ) {
       return 'hmt';
     }
     if (lower.endsWith('.pdf')) {
@@ -492,14 +509,16 @@ export class SanctionedEntityService {
     }
 
     const parsedRows = rowMatches.map((match) => {
-      const cells = [...match[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+      const cells = [
+        ...match[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi),
+      ];
       return cells.map((cell) => this.cleanMarkupText(cell[1]));
     });
 
     const headers = parsedRows[0];
-    const dataRows = parsedRows.slice(1).filter((row) =>
-      row.some((cell) => cell && cell.trim().length > 0),
-    );
+    const dataRows = parsedRows
+      .slice(1)
+      .filter((row) => row.some((cell) => cell && cell.trim().length > 0));
 
     return dataRows.map((row) => {
       const obj: Record<string, string> = {};
@@ -512,7 +531,14 @@ export class SanctionedEntityService {
   }
 
   private parseXmlEntryRows(content: string) {
-    const candidateTags = ['record', 'entry', 'individual', 'entity', 'item', 'person'];
+    const candidateTags = [
+      'record',
+      'entry',
+      'individual',
+      'entity',
+      'item',
+      'person',
+    ];
     const lower = content.toLowerCase();
     const repeatedTag =
       candidateTags.find((tag) => {
@@ -522,7 +548,10 @@ export class SanctionedEntityService {
 
     const entryMatches = [
       ...content.matchAll(
-        new RegExp(`<${repeatedTag}\\b[^>]*>([\\s\\S]*?)<\\/${repeatedTag}>`, 'gi'),
+        new RegExp(
+          `<${repeatedTag}\\b[^>]*>([\\s\\S]*?)<\\/${repeatedTag}>`,
+          'gi',
+        ),
       ),
     ];
 
@@ -557,7 +586,9 @@ export class SanctionedEntityService {
     let current: Record<string, string> = {};
 
     for (const line of lines) {
-      const parsed = line.match(/^([A-Za-z][A-Za-z0-9 /_-]{1,40})\s*[:\-]\s*(.+)$/);
+      const parsed = line.match(
+        /^([A-Za-z][A-Za-z0-9 /_-]{1,40})\s*[:\-]\s*(.+)$/,
+      );
       if (parsed) {
         const rawKey = parsed[1].trim();
         const value = parsed[2].trim();
@@ -613,7 +644,8 @@ export class SanctionedEntityService {
     }
 
     if (!textChunks.length) {
-      const fallbackChunks = binary.match(/[A-Za-z0-9][A-Za-z0-9 ,.:;/'"()_-]{4,}/g) || [];
+      const fallbackChunks =
+        binary.match(/[A-Za-z0-9][A-Za-z0-9 ,.:;/'"()_-]{4,}/g) || [];
       textChunks.push(...fallbackChunks);
     }
 
@@ -639,7 +671,12 @@ export class SanctionedEntityService {
   private normalizeImportedRow(row: Record<string, any>) {
     const normalized = this.normalizeObjectKeys(row);
     const address1 =
-      this.pickValue(normalized, ['addr1', 'address1', 'address', 'location']) || '';
+      this.pickValue(normalized, [
+        'addr1',
+        'address1',
+        'address',
+        'location',
+      ]) || '';
     const address2 = this.pickValue(normalized, ['addr2', 'address2']) || '';
     const address3 = this.pickValue(normalized, ['addr3', 'address3']) || '';
     const name1 = this.pickValue(normalized, ['name1']);
@@ -648,7 +685,11 @@ export class SanctionedEntityService {
     const name4 = this.pickValue(normalized, ['name4']);
     const name5 = this.pickValue(normalized, ['name5']);
     const name6 = this.pickValue(normalized, ['name6']);
-    const emitter = this.pickValue(normalized, ['emetteur', 'emitter', 'issuer']);
+    const emitter = this.pickValue(normalized, [
+      'emetteur',
+      'emitter',
+      'issuer',
+    ]);
     const requisitionId = this.pickValue(normalized, [
       'idrequisition',
       'requisitionid',
@@ -680,8 +721,7 @@ export class SanctionedEntityService {
 
     return {
       fullName: fullName || undefined,
-      alias:
-        this.pickValue(normalized, ['alias', 'aka', 'aliasname']) || null,
+      alias: this.pickValue(normalized, ['alias', 'aka', 'aliasname']) || null,
       dob: this.parseExcelDate(
         this.pickValue(normalized, ['dob', 'dateofbirth', 'datenaissance']),
       ),
@@ -690,16 +730,20 @@ export class SanctionedEntityService {
         this.pickValue(normalized, ['country']) ||
         null,
       placeOfBirth:
-        this.pickValue(normalized, ['placeofbirth', 'townofbirth', 'lieunaissance']) ||
-        null,
+        this.pickValue(normalized, [
+          'placeofbirth',
+          'townofbirth',
+          'lieunaissance',
+        ]) || null,
       townOfBirth:
-        this.pickValue(normalized, ['townofbirth', 'placeofbirth', 'lieunaissance']) ||
-        null,
-      countryOfBirth:
-        this.pickValue(normalized, ['countryofbirth']) || null,
+        this.pickValue(normalized, [
+          'townofbirth',
+          'placeofbirth',
+          'lieunaissance',
+        ]) || null,
+      countryOfBirth: this.pickValue(normalized, ['countryofbirth']) || null,
       addresses: [address1, address2, address3].filter(Boolean),
-      groupId:
-        this.pickValue(normalized, ['groupid', 'group']) || null,
+      groupId: this.pickValue(normalized, ['groupid', 'group']) || null,
       listedOn: this.parseExcelDate(
         this.pickValue(normalized, [
           'listedon',
@@ -721,11 +765,14 @@ export class SanctionedEntityService {
       name6: name6 || null,
       title: this.pickValue(normalized, ['title']) || null,
       nameNonLatin:
-        this.pickValue(normalized, ['namenonlatinscript', 'namenonlatin']) || null,
+        this.pickValue(normalized, ['namenonlatinscript', 'namenonlatin']) ||
+        null,
       nonLatinType:
-        this.pickValue(normalized, ['nonlatintype', 'namenonlatintype']) || null,
+        this.pickValue(normalized, ['nonlatintype', 'namenonlatintype']) ||
+        null,
       nonLatinLang:
-        this.pickValue(normalized, ['nonlatinlang', 'namenonlatinlang']) || null,
+        this.pickValue(normalized, ['nonlatinlang', 'namenonlatinlang']) ||
+        null,
       country: this.pickValue(normalized, ['country']) || null,
       groupType:
         this.pickValue(normalized, ['grouptype', 'type', 'typeclient']) || null,
@@ -734,33 +781,46 @@ export class SanctionedEntityService {
       addr1: address1 || null,
       addr2: address2 || null,
       addr3: address3 || null,
-      addr4:
-        this.pickValue(normalized, ['addr4', 'city', 'address4']) || null,
+      addr4: this.pickValue(normalized, ['addr4', 'city', 'address4']) || null,
       addr5:
-        this.pickValue(normalized, ['addr5', 'state', 'province', 'address5']) ||
-        null,
+        this.pickValue(normalized, [
+          'addr5',
+          'state',
+          'province',
+          'address5',
+        ]) || null,
       addr6: this.pickValue(normalized, ['addr6', 'address6']) || null,
       zipCode:
-        this.pickValue(normalized, ['zipcode', 'postalcode', 'postcode']) || null,
+        this.pickValue(normalized, ['zipcode', 'postalcode', 'postcode']) ||
+        null,
     };
   }
 
   private normalizeObjectKeys(row: Record<string, any>) {
-    return Object.entries(row || {}).reduce<Record<string, any>>((acc, [key, value]) => {
-      const normalizedKey = this.normalizeFieldKey(key);
-      acc[normalizedKey] = typeof value === 'string' ? value.trim() : value;
-      return acc;
-    }, {});
+    return Object.entries(row || {}).reduce<Record<string, any>>(
+      (acc, [key, value]) => {
+        const normalizedKey = this.normalizeFieldKey(key);
+        acc[normalizedKey] = typeof value === 'string' ? value.trim() : value;
+        return acc;
+      },
+      {},
+    );
   }
 
   private normalizeFieldKey(key: string) {
-    return String(key).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    return String(key)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase();
   }
 
   private pickValue(row: Record<string, any>, keys: string[]) {
     for (const key of keys) {
       const value = row[this.normalizeFieldKey(key)];
-      if (value !== undefined && value !== null && String(value).trim() !== '') {
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ''
+      ) {
         return value;
       }
     }
@@ -769,7 +829,10 @@ export class SanctionedEntityService {
 
   private cleanMarkupText(value: string) {
     return this.decodeHtmlEntities(
-      value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+      value
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
     );
   }
 
@@ -789,7 +852,8 @@ export class SanctionedEntityService {
 
   private rowHasContent(row: Record<string, any>) {
     return Object.values(row).some(
-      (value) => value !== null && value !== undefined && String(value).trim() !== '',
+      (value) =>
+        value !== null && value !== undefined && String(value).trim() !== '',
     );
   }
 
@@ -802,13 +866,20 @@ export class SanctionedEntityService {
 
   private normalizeStatus(status: string): BlacklistStatusEnum {
     const upper = String(status).toUpperCase();
-    if (Object.values(BlacklistStatusEnum).includes(upper as BlacklistStatusEnum)) {
+    if (
+      Object.values(BlacklistStatusEnum).includes(upper as BlacklistStatusEnum)
+    ) {
       return upper as BlacklistStatusEnum;
     }
     return BlacklistStatusEnum.READY;
   }
 
-  async bulkCreate(payload: { source: string; blacklistId?: string; entries: any[]; createdById?: string }) {
+  async bulkCreate(payload: {
+    source: string;
+    blacklistId?: string;
+    entries: any[];
+    createdById?: string;
+  }) {
     const { source, blacklistId, entries, createdById } = payload;
 
     const saved = await this.dataSource.transaction(async (manager) => {
@@ -829,7 +900,10 @@ export class SanctionedEntityService {
           await this.createEntryProfile(manager, savedBatch.id, entryData);
         }
       } catch (error) {
-        this.logger.error(`Error processing bulk create: ${error.message}`, error.stack);
+        this.logger.error(
+          `Error processing bulk create: ${error.message}`,
+          error.stack,
+        );
         throw new BadRequestException(`Bulk create failed: ${error.message}`);
       }
 
@@ -976,7 +1050,9 @@ export class SanctionedEntityService {
   private async persistEntryRelations(
     manager: EntityManager,
     entityProfileId: string,
-    data: ReturnType<typeof SanctionedEntityService.prototype.normalizeEntryData>,
+    data: ReturnType<
+      typeof SanctionedEntityService.prototype.normalizeEntryData
+    >,
   ) {
     const primaryName = manager.create(EntityName, {
       entityProfileId,
@@ -1067,14 +1143,16 @@ export class SanctionedEntityService {
       data.placeOfBirth || data.townOfBirth || data.countryOfBirth || null;
     const passportNumber = data.passportNum || data.passportNumber || null;
     const nationalIdNumber = data.nationalId || data.nationalIdNumber || null;
-    const addressLines = (data.addresses || [
-      data.addr1,
-      data.addr2,
-      data.addr3,
-      data.addr4,
-      data.addr5,
-      data.addr6,
-    ])
+    const addressLines = (
+      data.addresses || [
+        data.addr1,
+        data.addr2,
+        data.addr3,
+        data.addr4,
+        data.addr5,
+        data.addr6,
+      ]
+    )
       .filter((line: string) => line && String(line).trim().length > 0)
       .map((line: string) => String(line));
 
@@ -1088,10 +1166,14 @@ export class SanctionedEntityService {
       listedOn: data.listedOn || data.ukSanctionsListDate || null,
       otherInformation: data.otherInfo || data.otherInformation || null,
       nameNonLatin: data.nameNonLatin ? String(data.nameNonLatin) : null,
-      profileNationality: profileNationality ? String(profileNationality) : null,
+      profileNationality: profileNationality
+        ? String(profileNationality)
+        : null,
       placeOfBirth: placeOfBirth ? String(placeOfBirth) : null,
       passportNumber: passportNumber ? String(passportNumber) : null,
-      passportDetails: data.passportDetails ? String(data.passportDetails) : null,
+      passportDetails: data.passportDetails
+        ? String(data.passportDetails)
+        : null,
       nationalIdNumber: nationalIdNumber ? String(nationalIdNumber) : null,
       nationalIdDetails: data.nationalIdDetails
         ? String(data.nationalIdDetails)
@@ -1144,10 +1226,12 @@ export class SanctionedEntityService {
   private mapGroupType(groupType?: string): EntityTypeEnum {
     if (!groupType) return EntityTypeEnum.INDIVIDUAL;
     const upper = String(groupType).toUpperCase();
-    if (upper.includes('ORG') || upper.includes('ENTITY')) return EntityTypeEnum.ORGANIZATION;
+    if (upper.includes('ORG') || upper.includes('ENTITY'))
+      return EntityTypeEnum.ORGANIZATION;
     if (upper.includes('MORAL')) return EntityTypeEnum.ORGANIZATION;
     if (upper.includes('PHYSIQUE')) return EntityTypeEnum.INDIVIDUAL;
-    if (upper.includes('VESSEL') || upper.includes('SHIP')) return EntityTypeEnum.VESSEL;
+    if (upper.includes('VESSEL') || upper.includes('SHIP'))
+      return EntityTypeEnum.VESSEL;
     return EntityTypeEnum.INDIVIDUAL;
   }
 
@@ -1169,7 +1253,7 @@ export class SanctionedEntityService {
 
   /** Flatten an EntityProfile + relations into the flat column format the frontend ViewEntriesModal expects */
   private flattenProfile(p: EntityProfile): Record<string, any> {
-    const raw = p.rawData || {} as Record<string, any>;
+    const raw = p.rawData || ({} as Record<string, any>);
 
     // If rawData exists, use it directly — it preserves exact column positions
     // Otherwise fall back to relational data
@@ -1177,7 +1261,9 @@ export class SanctionedEntityService {
     const addr = p.addresses?.[0];
     const dob = p.datesOfBirth?.[0];
     const aliasName = p.names?.find((n) => n.nameType === NameTypeEnum.AKA);
-    const nlName = p.names?.find((n) => n.nameType === NameTypeEnum.PRIMARY_NAME_VARIATION);
+    const nlName = p.names?.find(
+      (n) => n.nameType === NameTypeEnum.PRIMARY_NAME_VARIATION,
+    );
 
     return {
       id: p.id,
@@ -1214,7 +1300,8 @@ export class SanctionedEntityService {
       regime: raw.regime || '',
       listedOn: raw.listedOn || p.listedOn || '',
       ukSanctionsListDate: raw.ukSanctionsListDate || '',
-      lastUpdated: raw.lastUpdated || p.updatedAt?.toISOString?.()?.split('T')?.[0] || '',
+      lastUpdated:
+        raw.lastUpdated || p.updatedAt?.toISOString?.()?.split('T')?.[0] || '',
       groupId: raw.groupId || p.groupId || '',
       fullName: raw.fullName || p.fullName || '',
       evidenceDocuments: p.evidenceDocuments || [],

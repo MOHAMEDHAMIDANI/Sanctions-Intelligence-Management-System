@@ -9,7 +9,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 
-const notificationOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+const notificationOrigins = (
+  process.env.FRONTEND_URL || 'http://localhost:5173'
+)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -55,7 +57,9 @@ export class NotificationGateway
       this.logger.log(`Authenticated notification socket for user ${user.id}`);
     } catch (error) {
       const err = error as Error;
-      this.logger.warn(`Rejected notification socket ${client.id}: ${err.message}`);
+      this.logger.warn(
+        `Rejected notification socket ${client.id}: ${err.message}`,
+      );
       client.disconnect(true);
     }
   }

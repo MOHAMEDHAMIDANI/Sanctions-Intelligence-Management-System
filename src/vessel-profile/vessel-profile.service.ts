@@ -13,8 +13,7 @@ export class VesselProfileService {
   ) {}
 
   async create(createVesselProfileDto: CreateVesselProfileDto) {
-    const profile =
-      this.vesselProfileRepository.create(createVesselProfileDto);
+    const profile = this.vesselProfileRepository.create(createVesselProfileDto);
     const saved = await this.vesselProfileRepository.save(profile);
     await this.auditLogService.log({
       action: AuditActionEnum.ENTITY_CREATED,

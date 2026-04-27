@@ -19,7 +19,9 @@ describe('UserService local invitation flow', () => {
 
   const createMailService = () => ({
     isMailEnabled: jest.fn(),
-    getInviteUrl: jest.fn((token: string) => `http://localhost:5173/confirm-account?token=${token}`),
+    getInviteUrl: jest.fn(
+      (token: string) => `http://localhost:5173/confirm-account?token=${token}`,
+    ),
     sendInviteEmail: jest.fn(),
   });
 

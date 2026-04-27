@@ -23,7 +23,9 @@ export class CreateSanctionedEntityDto {
   blacklistId?: string;
 
   @IsOptional()
-  @Transform(({ value }) => typeof value === 'string' ? value.toUpperCase() : value)
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
   @IsEnum(BlacklistStatusEnum)
   status?: BlacklistStatusEnum;
 

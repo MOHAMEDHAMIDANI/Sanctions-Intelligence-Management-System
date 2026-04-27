@@ -53,7 +53,9 @@ export class WebhookService {
       format: createDto.format || WebhookFormatEnum.JSON,
       isActive: createDto.isActive ?? true,
       mapping: createDto.mapping || {},
-      eventTypes: createDto.eventTypes || [WebhookEventTypeEnum.BATCH_VALIDATED],
+      eventTypes: createDto.eventTypes || [
+        WebhookEventTypeEnum.BATCH_VALIDATED,
+      ],
     });
     const savedTarget = await this.webhookTargetRepository.save(target);
 
@@ -64,7 +66,9 @@ export class WebhookService {
   }
 
   async updateTarget(id: string, updateDto: UpdateWebhookTargetDto) {
-    const target = await this.webhookTargetRepository.findOne({ where: { id } });
+    const target = await this.webhookTargetRepository.findOne({
+      where: { id },
+    });
     if (!target) {
       throw new NotFoundException('Webhook target not found');
     }
@@ -88,7 +92,9 @@ export class WebhookService {
   }
 
   async deleteTarget(id: string) {
-    const target = await this.webhookTargetRepository.findOne({ where: { id } });
+    const target = await this.webhookTargetRepository.findOne({
+      where: { id },
+    });
     if (!target) {
       throw new NotFoundException('Webhook target not found');
     }
@@ -114,9 +120,7 @@ export class WebhookService {
     return deliveries.map((delivery) => ({
       ...delivery,
       target:
-        (delivery.target
-          ? this.sanitizeTarget(delivery.target)
-          : null) ||
+        (delivery.target ? this.sanitizeTarget(delivery.target) : null) ||
         (delivery.targetName
           ? {
               id: delivery.targetId,
@@ -132,9 +136,14 @@ export class WebhookService {
     targetId: string,
     eventType: WebhookEventTypeEnum = WebhookEventTypeEnum.BATCH_VALIDATED,
   ) {
-    const [delivery] = await this.distributeBatch(batchId, eventType, targetId, {
-      allowNoTargets: false,
-    });
+    const [delivery] = await this.distributeBatch(
+      batchId,
+      eventType,
+      targetId,
+      {
+        allowNoTargets: false,
+      },
+    );
     return delivery;
   }
 
@@ -230,7 +239,8 @@ export class WebhookService {
 
     const uniqueTargets = new Map<string, WebhookDelivery>();
     for (const delivery of failedDeliveries) {
-      const deliveryKey = delivery.targetId || `${delivery.targetName}:${delivery.eventType}`;
+      const deliveryKey =
+        delivery.targetId || `${delivery.targetName}:${delivery.eventType}`;
       if (!uniqueTargets.has(deliveryKey)) {
         uniqueTargets.set(deliveryKey, delivery);
       }
@@ -544,7 +554,10 @@ export class WebhookService {
     const entryXml = entries
       .map((entry) => {
         const fields = Object.entries(entry)
-          .filter(([, value]) => value !== undefined && value !== null && value !== '')
+          .filter(
+            ([, value]) =>
+              value !== undefined && value !== null && value !== '',
+          )
           .map(
             ([key, value]) =>
               `<${key}>${this.escapeXml(String(value))}</${key}>`,
@@ -570,7 +583,10 @@ export class WebhookService {
 </distribution>`;
   }
 
-  private buildHmtWorkbook(batch: Record<string, any>, entries: Record<string, any>[]) {
+  private buildHmtWorkbook(
+    batch: Record<string, any>,
+    entries: Record<string, any>[],
+  ) {
     const xlsx = this.loadXlsx();
     const workbook = xlsx.utils.book_new();
     const hmtEntries = entries.map((entry) => this.toHmtEntry(entry));
@@ -594,7 +610,10 @@ export class WebhookService {
     });
   }
 
-  private buildExcelWorkbook(batch: Record<string, any>, entries: Record<string, any>[]) {
+  private buildExcelWorkbook(
+    batch: Record<string, any>,
+    entries: Record<string, any>[],
+  ) {
     const xlsx = this.loadXlsx();
     const workbook = xlsx.utils.book_new();
     const batchSheet = xlsx.utils.json_to_sheet([batch]);

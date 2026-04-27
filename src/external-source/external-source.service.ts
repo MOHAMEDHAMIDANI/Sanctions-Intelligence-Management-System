@@ -10,22 +10,32 @@ export class ExternalSourceService {
   ) {}
 
   create(createExternalSourceDto: CreateExternalSourceDto) {
-    throw new NotImplementedException('External sources are not implemented yet');
+    throw new NotImplementedException(
+      'External sources are not implemented yet',
+    );
   }
 
   findAll() {
-    throw new NotImplementedException('External sources are not implemented yet');
+    throw new NotImplementedException(
+      'External sources are not implemented yet',
+    );
   }
 
   findOne(id: string) {
-    throw new NotImplementedException('External sources are not implemented yet');
+    throw new NotImplementedException(
+      'External sources are not implemented yet',
+    );
   }
 
   update(id: string, updateExternalSourceDto: UpdateExternalSourceDto) {
-    throw new NotImplementedException('External sources are not implemented yet');
+    throw new NotImplementedException(
+      'External sources are not implemented yet',
+    );
   }
 
   remove(id: string) {
-    throw new NotImplementedException('External sources are not implemented yet');
+    throw new NotImplementedException(
+      'External sources are not implemented yet',
+    );
   }
 }

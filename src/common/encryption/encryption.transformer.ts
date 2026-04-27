@@ -30,7 +30,9 @@ export class EncryptionTransformer implements ValueTransformer {
       return this.encryptionService.decrypt(value);
     } catch (e) {
       const error = e as Error;
-      this.logger.error(`Failed to decrypt encrypted column value: ${error.message}`);
+      this.logger.error(
+        `Failed to decrypt encrypted column value: ${error.message}`,
+      );
       throw error;
     }
   }

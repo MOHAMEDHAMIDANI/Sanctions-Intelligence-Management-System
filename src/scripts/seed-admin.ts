@@ -8,12 +8,12 @@ async function bootstrap() {
   const userService = app.get(UserService);
 
   const adminEmail = 'mohamidani1@gmail.com';
-  
+
   try {
     const existing = await userService.findOneBy({ email: adminEmail });
     if (existing) {
       console.log(`User ${adminEmail} already exists.`);
-      
+
       // Ensure it's confirmed for testing
       if (!existing.isConfirmed) {
         await userService.update(existing.id, { isConfirmed: true } as any);
@@ -31,7 +31,7 @@ async function bootstrap() {
 
       // Mark as confirmed directly for testing
       await userService.update(admin.id, { isConfirmed: true } as any);
-      
+
       console.log('****************************************');
       console.log('Admin user created successfully!');
       console.log(`Email: ${adminEmail}`);

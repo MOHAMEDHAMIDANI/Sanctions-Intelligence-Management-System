@@ -28,7 +28,9 @@ export class AuthService {
     }
 
     if (!user.isConfirmed) {
-      throw new UnauthorizedException('Account not confirmed. Please check your email.');
+      throw new UnauthorizedException(
+        'Account not confirmed. Please check your email.',
+      );
     }
 
     // Generate 6-digit OTP
@@ -74,7 +76,7 @@ export class AuthService {
   async verifyOtp(verifyOtpDto: VerifyOtpDto) {
     const { email, code } = verifyOtpDto;
     const user = await this.userService.findOneBy({ email });
-    
+
     if (!user) {
       throw new UnauthorizedException('User not found');
     }

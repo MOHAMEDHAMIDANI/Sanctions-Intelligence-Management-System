@@ -13,8 +13,9 @@ export class IndividualProfileService {
   ) {}
 
   async create(createIndividualProfileDto: CreateIndividualProfileDto) {
-    const profile =
-      this.individualProfileRepository.create(createIndividualProfileDto);
+    const profile = this.individualProfileRepository.create(
+      createIndividualProfileDto,
+    );
     const saved = await this.individualProfileRepository.save(profile);
     await this.auditLogService.log({
       action: AuditActionEnum.ENTITY_CREATED,

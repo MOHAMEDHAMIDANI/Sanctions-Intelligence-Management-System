@@ -13,8 +13,9 @@ export class OrganizationProfileService {
   ) {}
 
   async create(createOrganizationProfileDto: CreateOrganizationProfileDto) {
-    const profile =
-      this.organizationProfileRepository.create(createOrganizationProfileDto);
+    const profile = this.organizationProfileRepository.create(
+      createOrganizationProfileDto,
+    );
     const saved = await this.organizationProfileRepository.save(profile);
     await this.auditLogService.log({
       action: AuditActionEnum.ENTITY_CREATED,

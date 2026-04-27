@@ -21,7 +21,9 @@ export class NotificationService {
   ) {}
 
   async create(createNotificationDto: CreateNotificationDto) {
-    const notification = this.notificationRepository.create(createNotificationDto);
+    const notification = this.notificationRepository.create(
+      createNotificationDto,
+    );
     const saved = await this.notificationRepository.save(notification);
 
     this.logger.debug(`Notification persisted for user ${saved.userId}`);
@@ -38,19 +40,26 @@ export class NotificationService {
   }
 
   async markAsRead(id: string, userId: string) {
-    const notification = await this.notificationRepository.findOne({ where: { id } });
+    const notification = await this.notificationRepository.findOne({
+      where: { id },
+    });
     if (!notification) {
       throw new NotFoundException('Notification not found');
     }
     if (notification.userId !== userId) {
-      throw new ForbiddenException('You can only update your own notifications');
+      throw new ForbiddenException(
+        'You can only update your own notifications',
+      );
     }
     notification.isRead = true;
     return this.notificationRepository.save(notification);
   }
 
   async markAllAsRead(userId: string) {
-    await this.notificationRepository.update({ userId, isRead: false }, { isRead: true });
+    await this.notificationRepository.update(
+      { userId, isRead: false },
+      { isRead: true },
+    );
     return { success: true };
   }
 }

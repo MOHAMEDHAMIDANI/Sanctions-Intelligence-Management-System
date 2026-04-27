@@ -100,9 +100,12 @@ export class ReviewService {
       });
 
       // Notify the creator
-      const targetUserId = sanctionedEntity.createdById || createReviewDto.reviewerId;
-      this.logger.debug(`Triggering rejection notification for user ${targetUserId}`);
-      
+      const targetUserId =
+        sanctionedEntity.createdById || createReviewDto.reviewerId;
+      this.logger.debug(
+        `Triggering rejection notification for user ${targetUserId}`,
+      );
+
       if (targetUserId) {
         try {
           await this.notificationService.create({

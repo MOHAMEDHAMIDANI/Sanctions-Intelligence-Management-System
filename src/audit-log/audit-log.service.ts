@@ -12,14 +12,20 @@ export class AuditLogService {
     return this.auditLogRepository.save(log);
   }
 
-  findAll(filters?: { entityId?: string; entityType?: string; batchId?: string }) {
+  findAll(filters?: {
+    entityId?: string;
+    entityType?: string;
+    batchId?: string;
+  }) {
     const query = this.auditLogRepository
       .createQueryBuilder('audit')
       .leftJoinAndSelect('audit.user', 'user')
       .orderBy('audit.createdAt', 'DESC');
 
     if (filters?.entityId) {
-      query.andWhere('audit.entityId = :entityId', { entityId: filters.entityId });
+      query.andWhere('audit.entityId = :entityId', {
+        entityId: filters.entityId,
+      });
     }
 
     if (filters?.entityType) {

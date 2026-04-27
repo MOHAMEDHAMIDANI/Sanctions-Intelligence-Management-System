@@ -13,8 +13,9 @@ export class EntityBankAccountService {
   ) {}
 
   async create(createEntityBankAccountDto: CreateEntityBankAccountDto) {
-    const account =
-      this.entityBankAccountRepository.create(createEntityBankAccountDto);
+    const account = this.entityBankAccountRepository.create(
+      createEntityBankAccountDto,
+    );
     const saved = await this.entityBankAccountRepository.save(account);
     await this.auditLogService.log({
       action: AuditActionEnum.ENTITY_CREATED,

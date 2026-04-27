@@ -57,7 +57,10 @@ import { RolesGuard } from './auth/guards/roles.guard';
         JWT_SECRET: Joi.string().min(16).required(),
         JWT_EXPIRATION: Joi.string().required(),
         ENCRYPTION_KEYS: Joi.string().required(),
-        MAIL_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+        MAIL_ENABLED: Joi.boolean()
+          .truthy('true')
+          .falsy('false')
+          .default(false),
         SMTP_HOST: Joi.when('MAIL_ENABLED', {
           is: true,
           then: Joi.string().required(),

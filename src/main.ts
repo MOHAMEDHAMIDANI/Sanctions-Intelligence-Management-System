@@ -36,14 +36,18 @@ async function bootstrap() {
       }
 
       const isConfiguredOrigin = configuredOrigins.includes(origin);
-      const isLocalhostOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isLocalhostOrigin =
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 
       if (isConfiguredOrigin || isLocalhostOrigin) {
         return callback(null, true);
       }
 
       logger.warn(`Blocked CORS request from origin: ${origin}`);
-      return callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+      return callback(
+        new Error(`Origin ${origin} is not allowed by CORS`),
+        false,
+      );
     },
     credentials: true,
   });

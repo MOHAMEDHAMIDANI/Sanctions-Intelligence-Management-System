@@ -43,8 +43,9 @@ export class EvidenceDocumentService {
   }
 
   create(createEvidenceDocumentDto: CreateEvidenceDocumentDto) {
-    const document =
-      this.evidenceDocumentRepository.create(createEvidenceDocumentDto);
+    const document = this.evidenceDocumentRepository.create(
+      createEvidenceDocumentDto,
+    );
     return this.evidenceDocumentRepository.save(document);
   }
 
@@ -62,7 +63,10 @@ export class EvidenceDocumentService {
     return document;
   }
 
-  async update(id: string, updateEvidenceDocumentDto: UpdateEvidenceDocumentDto) {
+  async update(
+    id: string,
+    updateEvidenceDocumentDto: UpdateEvidenceDocumentDto,
+  ) {
     const document = await this.evidenceDocumentRepository.preload({
       id,
       ...updateEvidenceDocumentDto,

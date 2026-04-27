@@ -17,9 +17,13 @@ export class VesselProfile {
   @Column({ type: 'uuid' })
   entityProfileId: string;
 
-  @OneToOne(() => EntityProfile, (entityProfile) => entityProfile.vesselProfile, {
-    onDelete: 'CASCADE',
-  })
+  @OneToOne(
+    () => EntityProfile,
+    (entityProfile) => entityProfile.vesselProfile,
+    {
+      onDelete: 'CASCADE',
+    },
+  )
   @JoinColumn({ name: 'entityProfileId' })
   entityProfile: EntityProfile;
 

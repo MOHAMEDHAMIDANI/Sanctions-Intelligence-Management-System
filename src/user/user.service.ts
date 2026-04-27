@@ -34,28 +34,31 @@ export class UserService {
     }
 
     const tableName = this.userRepository.metadata.tableName;
-    const attemptColumn = this.userRepository.metadata.findColumnWithPropertyName(
-      'otpAttemptCount',
-    )?.databaseName;
-    const lockedUntilColumn = this.userRepository.metadata.findColumnWithPropertyName(
-      'otpLockedUntil',
-    )?.databaseName;
+    const attemptColumn =
+      this.userRepository.metadata.findColumnWithPropertyName(
+        'otpAttemptCount',
+      )?.databaseName;
+    const lockedUntilColumn =
+      this.userRepository.metadata.findColumnWithPropertyName(
+        'otpLockedUntil',
+      )?.databaseName;
 
     if (!attemptColumn || !lockedUntilColumn) {
       this.otpLockoutColumnsAvailable = false;
       return this.otpLockoutColumnsAvailable;
     }
 
-    const rows: Array<{ column_name: string }> = await this.userRepository.query(
-      `
+    const rows: Array<{ column_name: string }> =
+      await this.userRepository.query(
+        `
         SELECT column_name
         FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = $1
           AND column_name = ANY($2::text[])
       `,
-      [tableName, [attemptColumn, lockedUntilColumn]],
-    );
+        [tableName, [attemptColumn, lockedUntilColumn]],
+      );
 
     const availableColumns = new Set(rows.map((row) => row.column_name));
     this.otpLockoutColumnsAvailable =
@@ -72,7 +75,9 @@ export class UserService {
   }
 
   async create(createUserDto: CreateUserDto) {
-    const existing = await this.userRepository.findOneBy({ email: createUserDto.email });
+    const existing = await this.userRepository.findOneBy({
+      email: createUserDto.email,
+    });
     if (existing) {
       throw new BadRequestException('User already exists');
     }
@@ -99,7 +104,8 @@ export class UserService {
       } catch (error) {
         const err = error as Error;
         invitationWarning =
-          err.message || 'Invitation email failed to send. Use the local invite link instead.';
+          err.message ||
+          'Invitation email failed to send. Use the local invite link instead.';
       }
     } else {
       invitationWarning =
@@ -200,7 +206,11 @@ export class UserService {
       }
     }
 
-    if (!user.otpCode || !user.otpExpiry || isAfter(new Date(), user.otpExpiry)) {
+    if (
+      !user.otpCode ||
+      !user.otpExpiry ||
+      isAfter(new Date(), user.otpExpiry)
+    ) {
       return false;
     }
 
@@ -212,7 +222,9 @@ export class UserService {
         const shouldLock = nextAttempts >= 5;
         await this.userRepository.update(id, {
           otpAttemptCount: shouldLock ? 0 : nextAttempts,
-          otpLockedUntil: shouldLock ? new Date(Date.now() + 15 * 60 * 1000) : null,
+          otpLockedUntil: shouldLock
+            ? new Date(Date.now() + 15 * 60 * 1000)
+            : null,
         });
         return false;
       }
@@ -286,7 +298,11 @@ export class UserService {
       throw new BadRequestException('User account is already confirmed');
     }
 
-    if (!user.inviteToken || !user.inviteTokenExpiry || isAfter(new Date(), user.inviteTokenExpiry)) {
+    if (
+      !user.inviteToken ||
+      !user.inviteTokenExpiry ||
+      isAfter(new Date(), user.inviteTokenExpiry)
+    ) {
       throw new BadRequestException('Invitation token is missing or expired');
     }
 

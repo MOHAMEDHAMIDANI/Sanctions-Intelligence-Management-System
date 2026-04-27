@@ -45,8 +45,14 @@ export class SanctionedEntityController {
 
   @Post('bulk')
   @UseGuards(JwtAuthGuard)
-  bulkCreate(@Body() payload: { source: string; blacklistId?: string; entries: any[] }, @Request() req: any) {
-    return this.sanctionedEntityService.bulkCreate({ ...payload, createdById: req.user.id });
+  bulkCreate(
+    @Body() payload: { source: string; blacklistId?: string; entries: any[] },
+    @Request() req: any,
+  ) {
+    return this.sanctionedEntityService.bulkCreate({
+      ...payload,
+      createdById: req.user.id,
+    });
   }
 
   @Get('stats')

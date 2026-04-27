@@ -13,8 +13,9 @@ export class EntityDateOfBirthService {
   ) {}
 
   async create(createEntityDateOfBirthDto: CreateEntityDateOfBirthDto) {
-    const dob =
-      this.entityDateOfBirthRepository.create(createEntityDateOfBirthDto);
+    const dob = this.entityDateOfBirthRepository.create(
+      createEntityDateOfBirthDto,
+    );
     const saved = await this.entityDateOfBirthRepository.save(dob);
     await this.auditLogService.log({
       action: AuditActionEnum.ENTITY_CREATED,

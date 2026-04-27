@@ -39,7 +39,9 @@ export class EntityProfile {
   sanctionedEntityId: string;
 
   /** Many profiles belong to one sanctioned entity (batch) */
-  @ManyToOne(() => SanctionedEntity, (se) => se.entityProfiles, { onDelete: 'CASCADE' })
+  @ManyToOne(() => SanctionedEntity, (se) => se.entityProfiles, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'sanctionedEntityId' })
   sanctionedEntity: SanctionedEntity;
 
@@ -102,13 +104,13 @@ export class EntityProfile {
   @OneToMany(() => EntityName, (entityName) => entityName.entityProfile)
   names: EntityName[];
 
-  @OneToMany(() => EntityAddress, (entityAddress) => entityAddress.entityProfile)
+  @OneToMany(
+    () => EntityAddress,
+    (entityAddress) => entityAddress.entityProfile,
+  )
   addresses: EntityAddress[];
 
-  @OneToMany(
-    () => EntityDateOfBirth,
-    (entityDob) => entityDob.entityProfile,
-  )
+  @OneToMany(() => EntityDateOfBirth, (entityDob) => entityDob.entityProfile)
   datesOfBirth: EntityDateOfBirth[];
 
   @OneToMany(() => EntityStatus, (entityStatus) => entityStatus.entityProfile)

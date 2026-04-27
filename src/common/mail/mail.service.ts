@@ -27,7 +27,10 @@ export class MailService {
   }
 
   isMailEnabled() {
-    return String(this.configService.get('MAIL_ENABLED', 'true')).toLowerCase() !== 'false';
+    return (
+      String(this.configService.get('MAIL_ENABLED', 'true')).toLowerCase() !==
+      'false'
+    );
   }
 
   private getFromAddress() {
@@ -43,7 +46,9 @@ export class MailService {
 
   private buildInviteUrl(token: string) {
     const encodedToken = encodeURIComponent(token);
-    const inviteUrlTemplate = this.configService.get<string>('INVITE_URL_TEMPLATE');
+    const inviteUrlTemplate = this.configService.get<string>(
+      'INVITE_URL_TEMPLATE',
+    );
 
     if (inviteUrlTemplate) {
       return inviteUrlTemplate
@@ -96,7 +101,12 @@ export class MailService {
     }
   }
 
-  private async sendMail(options: { to: string, subject: string, html: string, from?: string }) {
+  private async sendMail(options: {
+    to: string;
+    subject: string;
+    html: string;
+    from?: string;
+  }) {
     this.assertSmtpConfig();
 
     try {
@@ -108,7 +118,9 @@ export class MailService {
         html: options.html,
       });
 
-      this.logger.log(`Email sent successfully to ${options.to} (${result.messageId})`);
+      this.logger.log(
+        `Email sent successfully to ${options.to} (${result.messageId})`,
+      );
       return result;
     } catch (error) {
       const err = error as Error;
